@@ -1,0 +1,30 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --frozen --dev
+      - run: uv run pytest
+      - name: Validate Compose and real MongoDB behavior
+        run: |
+          trap 'docker compose down -v' EXIT
+          docker compose config --quiet
+          docker compose up -d mongo mongo-init
+          docker compose wait mongo-init
+          SPIDER_TEST_MONGODB_URI='mongodb://localhost:27017/spider_integration?replicaSet=rs0&directConnection=true' \
+            uv run pytest tests/test_mongo_integration.py
+      - run: docker build -t spider-executor:test .

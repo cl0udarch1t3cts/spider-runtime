@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spider-executor"
+version = "0.1.0"
+description = "Production executor for deterministic spider-scripts scrapers"
+requires-python = ">=3.12"
+dependencies = [
+  "beautifulsoup4>=4.12",
+  "fastapi>=0.116",
+  "httpx>=0.28",
+  "lxml>=5.0",
+  "pydantic-settings>=2.10",
+  "pymongo>=4.13",
+  "requests>=2.31",
+  "uvicorn>=0.35",
+]
+
+[dependency-groups]
+dev = [
+  "mongomock>=4.3",
+  "pytest>=8.4",
+  "pytest-asyncio>=1.1",
+]
+
+[project.scripts]
+spider-executor-worker = "spider_executor.worker_main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = [
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]

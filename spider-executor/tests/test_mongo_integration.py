@@ -1,0 +1,57 @@
+import os
+
+import pytest
+from pymongo import MongoClient
+
+from spider_executor.models import (
+    Artifact,
+    Entry,
+    ExecutionJob,
+    ExecutionRun,
+    JobStatus,
+    ScrapedRecord,
+)
+from spider_executor.service import MongoControlService
+
+URI = os.getenv("SPIDER_TEST_MONGODB_URI")
+pytestmark = pytest.mark.skipif(not URI, reason="real MongoDB integration is opt-in")
+
+
+def test_real_mongodb_indexes_upsert_and_atomic_claim() -> None:
+    client = MongoClient(URI, serverSelectionTimeoutMS=5000)
+    db = client.get_database("spider_integration")
+    client.drop_database(db.name)
+    service = MongoControlService(db)
+    service.ensure_indexes()
+
+    service.put_entry(Entry(slug="example", name="First", website="https://example.com"))
+    updated = service.put_entry(Entry(slug="example", name="Updated", website="https://example.com"))
+    assert updated.name == "Updated"
+
+    job = service.enqueue(ExecutionJob(slug="example", idempotency_key="integration:1"))
+    duplicate = service.enqueue(ExecutionJob(slug="example", idempotency_key="integration:1"))
+    claimed = service.claim("integration-worker")
+
+    assert duplicate.id == job.id
+    assert claimed.id == job.id
+    assert claimed.lease.worker_id == "integration-worker"
+    run = ExecutionRun(
+        id=f"{claimed.id}:{claimed.attempts}",
+        job_id=claimed.id,
+        slug="example",
+        status=JobStatus.RUNNING,
+    )
+    record = ScrapedRecord(
+        slug="example",
+        website="https://example.com",
+        fields={"NAME": {"value": "Example", "source": "https://example.com"}},
+    )
+    artifact = Artifact(
+        key=f"runs/{run.id}/output.json",
+        size_bytes=1,
+        sha256="0" * 64,
+    )
+    assert service.complete_success(claimed, run, record, artifact)
+    assert service.get_job(claimed.id).status == JobStatus.SUCCEEDED
+    assert service.get_record(run.id).fields["NAME"].value == "Example"
+    client.drop_database(db.name)

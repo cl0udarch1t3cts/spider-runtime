@@ -1,0 +1,91 @@
+services:
+  mongo:
+    image: mongo:8.0
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks: [control]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  mongo-init:
+    image: mongo:8.0
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    networks: [control]
+    entrypoint: ["mongosh", "--host", "mongo:27017", "--quiet", "--eval"]
+    command:
+      - |
+        try { rs.status() } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }
+        while (!db.hello().isWritablePrimary) { sleep(500) }
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    environment:
+      SPIDER_MONGODB_URI: mongodb://mongo:27017/spider?replicaSet=rs0&directConnection=true
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks: [control]
+
+  worker:
+    build: .
+    command: ["spider-executor-worker"]
+    restart: unless-stopped
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      runner:
+        condition: service_healthy
+    environment:
+      SPIDER_MONGODB_URI: mongodb://mongo:27017/spider?replicaSet=rs0&directConnection=true
+      SPIDER_ARTIFACT_ROOT: /srv/spider/artifacts
+      SPIDER_WORKER_ID: executor-1
+      SPIDER_RUNNER_URL: http://runner:8001
+    volumes:
+      - artifacts:/srv/spider/artifacts
+    networks: [control, runner]
+
+  runner:
+    build: .
+    command: ["uvicorn", "spider_executor.runner_main:app", "--host", "0.0.0.0", "--port", "8001"]
+    restart: unless-stopped
+    environment:
+      SPIDER_SCRIPTS_ROOT: /srv/spider/repositories/spider-scripts
+      SPIDER_RUNNER_TIMEOUT_SECONDS: 90
+    volumes:
+      - ${SPIDER_SCRIPTS_HOST_PATH:-../spider-scripts}:/srv/spider/repositories/spider-scripts:ro
+    networks: [runner]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/live', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+networks:
+  control:
+    internal: true
+  runner: {}
+
+volumes:
+  mongo-data:
+  artifacts:
