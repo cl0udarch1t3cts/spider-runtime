@@ -23,8 +23,11 @@ jobs:
         run: |
           trap 'docker compose down -v' EXIT
           docker compose config --quiet
-          docker compose up -d mongo mongo-init
-          docker compose wait mongo-init
+          docker compose up -d mongo
+          docker compose exec -T mongo mongosh --quiet --eval \
+            'rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]})'
+          until docker compose exec -T mongo mongosh --quiet --eval \
+            'quit(db.hello().isWritablePrimary ? 0 : 1)'; do sleep 1; done
           SPIDER_TEST_MONGODB_URI='mongodb://localhost:27017/spider_integration?replicaSet=rs0&directConnection=true' \
             uv run pytest tests/test_mongo_integration.py
       - run: docker build -t spider-executor:test .

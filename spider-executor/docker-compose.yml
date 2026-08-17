@@ -21,13 +21,15 @@ services:
         condition: service_healthy
     restart: "no"
     networks: [control]
-    entrypoint: ["mongosh", "--host", "mongo:27017", "--quiet", "--eval"]
+    entrypoint: ["/bin/bash", "-ceu"]
     command:
       - |
-        let initialized = false
-        try { initialized = rs.status().ok === 1 } catch (e) { initialized = false }
-        if (!initialized) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }
-        while (!db.hello().isWritablePrimary) { sleep(500) }
+        mongosh --host mongo:27017 --quiet --eval '
+          let initialized = false;
+          try { initialized = rs.status().ok === 1 } catch (e) { initialized = false }
+          if (!initialized) { rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]}) }
+          while (!db.hello().isWritablePrimary) { sleep(500) }
+        '
 
   api:
     build: .
