@@ -23,7 +23,7 @@ jobs:
         run: |
           trap 'docker compose down -v' EXIT
           docker compose config --quiet
-          docker compose up -d mongo
+          docker compose up -d --wait mongo
           docker compose exec -T mongo mongosh --quiet --eval \
             'rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]})'
           until docker compose exec -T mongo mongosh --quiet --eval \
