@@ -179,3 +179,39 @@ def test_semantic_failure_creates_one_doctor_task() -> None:
     assert first.status == JobStatus.FAILED
     assert second.status == JobStatus.FAILED
     assert service.doctor_task_count() == 1
+    task = service.db.doctor_tasks.find_one({"active_key": "example"})
+    assert task["status"] == "queued"
+    assert task["attempts"] == 0
+    assert task["max_attempts"] == 2
+    assert task["priority"] == 50
+    assert task["available_at"] is not None
+    assert task["lease"] is None
+
+
+def test_new_failure_does_not_retarget_running_or_reviewable_doctor_task() -> None:
+    service = make_service()
+    service.put_entry(
+        Entry(
+            slug="example",
+            name="Example",
+            website="https://example.com",
+            validation={"required_fields": ["NAME"]},
+        )
+    )
+    bad = successful_result()
+    bad.record.fields["NAME"].value = None
+    bad.record.fields["NAME"].source = None
+    service.enqueue(ExecutionJob(slug="example", idempotency_key="initial-failure"))
+    worker = ExecutorWorker(service, FakeRunner(bad), worker_id="worker-1")
+    initial = worker.process_one()
+    service.db.doctor_tasks.update_one(
+        {"active_key": "example"},
+        {"$set": {"status": "awaiting_review"}},
+    )
+    service.enqueue(ExecutionJob(slug="example", idempotency_key="later-failure"))
+
+    worker.process_one()
+
+    task = service.db.doctor_tasks.find_one({"active_key": "example"})
+    assert task["status"] == "awaiting_review"
+    assert task["source_run_id"] == initial.id

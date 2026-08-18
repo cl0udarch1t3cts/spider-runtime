@@ -117,7 +117,30 @@ class MongoControlService:
         document.pop("run_id", None)
         return ScrapedRecord.model_validate(document)
 
-    def ensure_doctor_task(self, slug: str, run_id: str, failure_class: str, errors: list[str]) -> None:
+    def _upsert_doctor_task(
+        self,
+        slug: str,
+        run_id: str,
+        failure_class: str,
+        errors: list[str],
+        *,
+        session=None,
+    ) -> None:
+        now = datetime.now(UTC)
+        kwargs = self._session_kwargs(session)
+        latest = {
+            "source_run_id": run_id,
+            "failure_class": failure_class,
+            "errors": errors,
+            "updated_at": now,
+        }
+        queued = self.db.doctor_tasks.update_one(
+            {"active_key": slug, "status": "queued"},
+            {"$set": latest},
+            **kwargs,
+        )
+        if queued.matched_count:
+            return
         self.db.doctor_tasks.update_one(
             {"active_key": slug},
             {
@@ -127,17 +150,21 @@ class MongoControlService:
                     "slug": slug,
                     "type": "repair",
                     "status": "queued",
-                    "created_at": datetime.now(UTC),
-                },
-                "$set": {
-                    "source_run_id": run_id,
-                    "failure_class": failure_class,
-                    "errors": errors,
-                    "updated_at": datetime.now(UTC),
-                },
+                    "priority": 50,
+                    "attempts": 0,
+                    "max_attempts": 2,
+                    "available_at": now,
+                    "lease": None,
+                    "created_at": now,
+                    **latest,
+                }
             },
             upsert=True,
+            **kwargs,
         )
+
+    def ensure_doctor_task(self, slug: str, run_id: str, failure_class: str, errors: list[str]) -> None:
+        self._upsert_doctor_task(slug, run_id, failure_class, errors)
 
     def doctor_task_count(self) -> int:
         return self.db.doctor_tasks.count_documents({})
@@ -229,25 +256,11 @@ class MongoControlService:
             run.finished_at = datetime.now(UTC)
             self.db.execution_runs.replace_one({"_id": run.id}, _encode(run), upsert=True, **kwargs)
             if failure.doctor_eligible:
-                self.db.doctor_tasks.update_one(
-                    {"active_key": run.slug},
-                    {
-                        "$setOnInsert": {
-                            "_id": str(uuid4()),
-                            "active_key": run.slug,
-                            "slug": run.slug,
-                            "type": "repair",
-                            "status": "queued",
-                            "created_at": datetime.now(UTC),
-                        },
-                        "$set": {
-                            "source_run_id": run.id,
-                            "failure_class": str(failure),
-                            "errors": errors,
-                            "updated_at": datetime.now(UTC),
-                        },
-                    },
-                    upsert=True,
-                    **kwargs,
+                self._upsert_doctor_task(
+                    run.slug,
+                    run.id,
+                    str(failure),
+                    errors,
+                    session=session,
                 )
         return True
