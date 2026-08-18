@@ -1,0 +1,13 @@
+###############################################################################
+### dory-und-du-baden
+###############################################################################
+POST http://127.0.0.1:8000/api/v1/execution-jobs
+Content-Type: application/json
+
+{
+  "slug": "dory-und-du-baden",
+  "trigger": "manual",
+  "idempotency_key": "initial:dory:1"
+}
+
+###
