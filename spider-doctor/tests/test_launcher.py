@@ -63,6 +63,62 @@ def test_command_has_fail_closed_container_boundaries(tmp_path: Path) -> None:
     assert command[-1].startswith("Repair or create exactly one deterministic scraper")
 
 
+def test_command_mounts_scoped_broker_token_without_embedding_secret(tmp_path: Path) -> None:
+    token_file = tmp_path / "proxy-token"
+    token_file.write_text("scoped-broker-token\n")
+    token_file.chmod(0o600)
+    config = LauncherConfig(
+        image=DIGEST,
+        hermes_home=tmp_path / "hermes",
+        proxy_token_file=token_file,
+    )
+
+    command = DockerHermesLauncher(config).build_command(
+        task(),
+        workspace=tmp_path / "workspace",
+        task_file=tmp_path / "task.json",
+        output_dir=tmp_path / "output",
+    )
+
+    snapshot = tmp_path / "proxy-token.snapshot"
+    assert f"--volume={snapshot.resolve()}:/task/proxy-token:ro" in command
+    assert snapshot.read_text() == "scoped-broker-token\n"
+    assert "scoped-broker-token" not in " ".join(command)
+
+
+def test_launcher_rejects_insecure_broker_token_file(tmp_path: Path) -> None:
+    token_file = tmp_path / "proxy-token"
+    token_file.write_text("scoped-broker-token\n")
+    token_file.chmod(0o644)
+
+    with pytest.raises(ValueError, match="0600"):
+        LauncherConfig(
+            image=DIGEST,
+            hermes_home=tmp_path / "hermes",
+            proxy_token_file=token_file,
+        )
+
+
+def test_launcher_revalidates_broker_token_before_each_container(tmp_path: Path) -> None:
+    token_file = tmp_path / "proxy-token"
+    token_file.write_text("scoped-broker-token\n")
+    token_file.chmod(0o600)
+    config = LauncherConfig(
+        image=DIGEST,
+        hermes_home=tmp_path / "hermes",
+        proxy_token_file=token_file,
+    )
+    token_file.chmod(0o644)
+
+    with pytest.raises(ValueError, match="0600"):
+        DockerHermesLauncher(config).build_command(
+            task(),
+            workspace=tmp_path / "workspace",
+            task_file=tmp_path / "task.json",
+            output_dir=tmp_path / "output",
+        )
+
+
 def test_result_rejects_path_traversal(tmp_path: Path) -> None:
     launcher = DockerHermesLauncher(LauncherConfig(image=DIGEST, hermes_home=tmp_path))
     with pytest.raises(ValueError, match="unsafe changed file"):

@@ -99,6 +99,44 @@ def test_run_uses_disposable_hermes_home_not_seed_volume(tmp_path: Path) -> None
     assert (task_file.parent / "hermes-home" / "config.yaml").is_file()
 
 
+def test_run_accepts_scoped_broker_key_command(tmp_path: Path) -> None:
+    home, workspace, task_file, output = make_inputs(tmp_path)
+    (home / "config.yaml").write_text(
+        "providers:\n"
+        "  doctor-codex:\n"
+        "    api: http://172.30.0.1:8645/v1\n"
+        "    transport: codex_responses\n"
+        "    key_cmd: cat /task/proxy-token\n"
+        "model:\n"
+        "  provider: custom:doctor-codex\n"
+        "  default: gpt-5.4\n"
+    )
+    token_file = tmp_path / "proxy-token"
+    token_file.write_text("scoped-broker-token\n")
+    token_file.chmod(0o600)
+    fake = executable(
+        tmp_path,
+        "import json\n"
+        "print(json.dumps({'status':'failed','summary':'expected','changed_files':[],"
+        "'tests':[],'errors':['expected']}))\n",
+    )
+    launcher = DockerHermesLauncher(
+        LauncherConfig(
+            image=DIGEST,
+            hermes_home=home,
+            proxy_token_file=token_file,
+            docker_binary=str(fake),
+            timeout_seconds=5,
+            verify_network_policy=False,
+        )
+    )
+
+    result = launcher.run(task(), workspace=workspace, task_file=task_file, output_dir=output)
+
+    assert result.status == DoctorStatus.FAILED
+    assert (task_file.parent / "hermes-home" / "config.yaml").is_file()
+
+
 def test_run_rejects_raw_provider_credentials_in_seed_home(tmp_path: Path) -> None:
     home, workspace, task_file, output = make_inputs(tmp_path)
     (home / ".env").write_text("OPENAI_API_KEY=secret\n")

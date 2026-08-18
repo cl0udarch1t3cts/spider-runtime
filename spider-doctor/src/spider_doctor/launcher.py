@@ -11,6 +11,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 import yaml
@@ -24,6 +25,7 @@ _DIGEST = re.compile(r"^[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$")
 class LauncherConfig:
     image: str
     hermes_home: Path
+    proxy_token_file: Path | None = None
     docker_binary: str = "docker"
     network: str = "spider-doctor-egress"
     timeout_seconds: int = 1800
@@ -41,6 +43,42 @@ class LauncherConfig:
             raise ValueError("Hermes image must be pinned by sha256 digest")
         if self.timeout_seconds < 1 or self.max_turns < 1:
             raise ValueError("timeout and max turns must be positive")
+        self.validated_proxy_token_file()
+
+    def validated_proxy_token_file(self) -> Path | None:
+        if self.proxy_token_file is None:
+            return None
+        self.read_validated_proxy_token()
+        return self.proxy_token_file.resolve()
+
+    def read_validated_proxy_token(self) -> bytes | None:
+        if self.proxy_token_file is None:
+            return None
+        descriptor = None
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(self.proxy_token_file, flags)
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError("proxy token file must be a regular file, not a symlink")
+            if stat.S_IMODE(metadata.st_mode) != 0o600:
+                raise ValueError("proxy token file must have mode 0600")
+            if metadata.st_uid != os.getuid():
+                raise ValueError("proxy token file must be owned by the Doctor user")
+            if metadata.st_nlink != 1:
+                raise ValueError("proxy token file must not be hard-linked")
+            if metadata.st_size < 1 or metadata.st_size > 4096:
+                raise ValueError("proxy token file must be between 1 and 4096 bytes")
+            token = os.read(descriptor, 4097)
+            text = token.decode("utf-8").strip()
+            if not text or "\n" in text or "\r" in text:
+                raise ValueError("proxy token file must contain one non-empty token line")
+            return (text + "\n").encode("utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ValueError("proxy token file must contain secure UTF-8 text") from exc
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
 
 
 class DockerHermesLauncher:
@@ -69,7 +107,7 @@ class DockerHermesLauncher:
             "scope. Return ONLY JSON matching /task/result-schema.json and also write it to "
             "/result/result.json."
         )
-        return [
+        command = [
             self.config.docker_binary,
             "run",
             "--rm",
@@ -102,6 +140,22 @@ class DockerHermesLauncher:
             "-q",
             prompt,
         ]
+        proxy_token = self.config.read_validated_proxy_token()
+        if proxy_token is not None:
+            snapshot = task_file.parent / "proxy-token.snapshot"
+            with NamedTemporaryFile(dir=task_file.parent, delete=False) as handle:
+                handle.write(proxy_token)
+                handle.flush()
+                os.fsync(handle.fileno())
+                temporary = Path(handle.name)
+            temporary.chmod(0o600)
+            temporary.replace(snapshot)
+            result_index = command.index(f"--volume={output_dir.resolve()}:/result:rw")
+            command.insert(
+                result_index,
+                f"--volume={snapshot.resolve()}:/task/proxy-token:ro",
+            )
+        return command
 
     def _task_usage(self, *roots: Path) -> tuple[int, int]:
         total_bytes = 0

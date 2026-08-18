@@ -40,6 +40,7 @@ def create_worker(settings: Settings) -> DoctorWorker:
             LauncherConfig(
                 image=settings.hermes_image,
                 hermes_home=hermes_home,
+                proxy_token_file=settings.proxy_token_file,
                 docker_binary=settings.docker_binary,
                 network=settings.docker_network,
                 timeout_seconds=settings.agent_timeout_seconds,

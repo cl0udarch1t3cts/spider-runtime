@@ -48,9 +48,59 @@ export SPIDER_DOCTOR_HERMES_IMAGE='nousresearch/hermes-agent@sha256:<digest>'
 export SPIDER_DOCTOR_MONGODB_URI='mongodb://127.0.0.1:27017/spider?replicaSet=rs0&directConnection=true'
 export SPIDER_DOCTOR_SOURCE_REPOSITORY='../spider-scripts'
 export SPIDER_DOCTOR_HERMES_HOME='./data/hermes'
+export SPIDER_DOCTOR_PROXY_TOKEN_FILE='./data/proxy-token'
 ```
 
 All settings use the `SPIDER_DOCTOR_` prefix. See `src/spider_doctor/settings.py` for bounded defaults.
+
+### Subscription broker configuration
+
+The Doctor may receive a scoped local broker token, but never the provider's
+OAuth credential. Create the token file as the Doctor user and keep it mode
+`0600`:
+
+```bash
+mkdir -p data
+openssl rand -hex 32 > data/proxy-token
+chmod 600 data/proxy-token
+```
+
+Configure the dedicated, credential-free Hermes home through the Hermes CLI.
+Replace `172.30.0.1` with the restricted Doctor bridge gateway that runs the
+credential broker:
+
+```bash
+export HERMES_HOME="$PWD/data/hermes"
+hermes config set providers.doctor-codex.api http://172.30.0.1:8645/v1
+hermes config set providers.doctor-codex.transport codex_responses
+hermes config set providers.doctor-codex.key_cmd 'cat /task/proxy-token'
+hermes config set providers.doctor-codex.default_model gpt-5.4
+hermes config set model.provider custom:doctor-codex
+hermes config set model.default gpt-5.4
+hermes config check
+```
+
+The dispatcher validates the host token file and mounts it read-only at
+`/task/proxy-token`. The token is intentionally usable only against the
+network-restricted local broker; the reusable OAuth access and refresh tokens
+remain outside every disposable Doctor container.
+
+Run the broker from a separate trusted Hermes home that contains the operator's
+Codex OAuth login. Do not point it at `data/hermes`, which is intentionally
+credential-free:
+
+```bash
+HERMES_HOME=/home/spider/.hermes hermes proxy start \
+  --provider openai-codex \
+  --host 172.30.0.1 \
+  --client-token-file "$PWD/data/proxy-token" \
+  --allowed-model gpt-5.4 \
+  --requests-per-minute 20 \
+  --max-concurrent-requests 2
+```
+
+Bind to the Doctor bridge gateway, not `0.0.0.0`, and enforce the restricted
+network/firewall policy before applying the required network attestation label.
 
 ## Run
 
