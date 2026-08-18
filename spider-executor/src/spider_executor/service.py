@@ -135,7 +135,7 @@ class MongoControlService:
             "updated_at": now,
         }
         queued = self.db.doctor_tasks.update_one(
-            {"active_key": slug, "status": "queued"},
+            {"active_key": slug, "status": "queued", "type": "repair"},
             {"$set": latest},
             **kwargs,
         )

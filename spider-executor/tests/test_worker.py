@@ -215,3 +215,40 @@ def test_new_failure_does_not_retarget_running_or_reviewable_doctor_task() -> No
     task = service.db.doctor_tasks.find_one({"active_key": "example"})
     assert task["status"] == "awaiting_review"
     assert task["source_run_id"] == initial.id
+
+
+def test_new_failure_does_not_retarget_queued_create_task() -> None:
+    service = make_service()
+    service.put_entry(
+        Entry(
+            slug="example",
+            name="Example",
+            website="https://example.com",
+            validation={"required_fields": ["NAME"]},
+        )
+    )
+    service.db.doctor_tasks.insert_one(
+        {
+            "_id": "create-task",
+            "active_key": "example",
+            "slug": "example",
+            "type": "create",
+            "status": "queued",
+            "source_run_id": None,
+            "failure_class": "NEW_SCRAPER",
+            "errors": [],
+            "request": {"name": "Example", "address": "Main Street 1"},
+        }
+    )
+    bad = successful_result()
+    bad.record.fields["NAME"].value = None
+    bad.record.fields["NAME"].source = None
+    service.enqueue(ExecutionJob(slug="example", idempotency_key="repair-failure"))
+
+    ExecutorWorker(service, FakeRunner(bad), worker_id="worker-1").process_one()
+
+    task = service.db.doctor_tasks.find_one({"_id": "create-task"})
+    assert task["type"] == "create"
+    assert task["source_run_id"] is None
+    assert task["failure_class"] == "NEW_SCRAPER"
+    assert task["errors"] == []
