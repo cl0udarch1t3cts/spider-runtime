@@ -1,0 +1,109 @@
+from __future__ import annotations
+
+import re
+import shutil
+import stat
+import subprocess
+from pathlib import Path, PurePosixPath
+from typing import ClassVar
+
+
+class GitWorkspace:
+    _GLOBAL_ALLOWED: ClassVar[set[str]] = {
+        "PROGRESS.md",
+        "registry.json",
+        "tests/verify.py",
+        "tests/test_verify.py",
+    }
+
+    def __init__(self, source_repository: Path, workspace_root: Path) -> None:
+        self.source_repository = source_repository.resolve()
+        self.workspace_root = workspace_root.resolve()
+        self.workspace_root.mkdir(parents=True, exist_ok=True)
+        self._expected_heads: dict[Path, str] = {}
+
+    @staticmethod
+    def _run(cwd: Path, *args: str) -> str:
+        return GitWorkspace._run_raw(cwd, *args).strip()
+
+    @staticmethod
+    def _run_raw(cwd: Path, *args: str) -> str:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return result.stdout
+
+    def prepare(self, task_id: str, release: str) -> Path:
+        if not re.fullmatch(r"[0-9a-f]{40}", release):
+            raise ValueError("scraper release must be a full 40-character Git SHA")
+        safe_id = re.sub(r"[^A-Za-z0-9_.-]", "-", task_id).strip("-.")
+        if not safe_id:
+            raise ValueError("task id cannot form a safe workspace name")
+        workspace = self.workspace_root / safe_id
+        if workspace.exists():
+            shutil.rmtree(workspace)
+        subprocess.run(
+            ["git", "clone", "--quiet", "--no-local", "--no-checkout", str(self.source_repository), str(workspace)],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self._run(workspace, "checkout", "--quiet", "--detach", release)
+        if self._run(workspace, "rev-parse", "HEAD") != release:
+            raise RuntimeError("workspace did not resolve to requested release")
+        if self._run(workspace, "status", "--porcelain", "--untracked-files=all"):
+            raise RuntimeError("new Doctor workspace is unexpectedly dirty")
+        self._expected_heads[workspace.resolve()] = release
+        return workspace
+
+    def validate_changes(self, workspace: Path, slug: str) -> list[str]:
+        workspace = workspace.resolve()
+        expected_head = self._expected_heads.get(workspace)
+        if expected_head is None:
+            raise ValueError("workspace was not prepared by this dispatcher")
+        if self._run(workspace, "rev-parse", "HEAD") != expected_head:
+            raise ValueError("workspace HEAD changed during Doctor execution")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,127}", slug):
+            raise ValueError("unsafe slug")
+        output = self._run_raw(workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+        changed: list[str] = []
+        for entry in output.split("\0"):
+            if not entry:
+                continue
+            if len(entry) < 4 or entry[2] != " ":
+                raise ValueError("could not safely parse Git status output")
+            status_code = entry[:2]
+            if "R" in status_code or "C" in status_code:
+                raise ValueError("renames and copies are not allowed in Doctor patches")
+            name = entry[3:]
+            path = PurePosixPath(name)
+            allowed = (
+                name in self._GLOBAL_ALLOWED
+                or path.parts[:2] == ("scrapers", slug)
+                or path.parts[:2] == ("tests", "fixtures")
+            )
+            candidate = workspace / Path(*path.parts)
+            disk_path = candidate.resolve()
+            if (
+                path.is_absolute()
+                or ".." in path.parts
+                or not disk_path.is_relative_to(workspace.resolve())
+                or not allowed
+            ):
+                raise ValueError(f"changed file is outside the Doctor allowlist: {name}")
+            if candidate.exists() or candidate.is_symlink():
+                metadata = candidate.lstat()
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise ValueError(f"changed path is not a regular file: {name}")
+                if metadata.st_size > 100 * 1024 * 1024:
+                    raise ValueError(f"changed file exceeds size limit: {name}")
+            changed.append(path.as_posix())
+            if len(changed) > 1000:
+                raise ValueError("Doctor patch changes too many files")
+        return sorted(changed)

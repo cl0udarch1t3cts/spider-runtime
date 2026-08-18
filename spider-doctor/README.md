@@ -1,0 +1,92 @@
+# Spider Doctor
+
+A trusted host dispatcher that claims deterministic repair tasks from `spider.doctor_tasks` and launches **one disposable Hermes container per attempt**. The deterministic executor remains LLM-free.
+
+## Security boundary
+
+The Hermes container receives only:
+
+- a standalone disposable clone of `spider-scripts` at the exact failing Git SHA;
+- task-scoped Mongo evidence serialized to a read-only JSON file;
+- a task result directory;
+- a dedicated Hermes data directory.
+
+It does **not** receive MongoDB credentials, production artifacts, GitHub credentials, or `/var/run/docker.sock`. It is non-root, capability-free, read-only except for the task mounts, resource-limited, and attached only to a named egress network. The dispatcher validates the actual Git diff and rejects changes outside the slug-specific allowlist.
+
+The dispatcher does not push or merge. Successful attempts stop at `awaiting_review`; a separate trusted promotion step should independently test the patch and open a PR.
+
+## Prerequisites
+
+- Docker Engine and the Docker CLI on the dispatcher host.
+- A clean local `../spider-scripts` clone containing the failing release.
+- MongoDB access from the dispatcher host.
+- A dedicated Hermes home initialized for the Doctor.
+- A pinned Hermes image reference such as `nousresearch/hermes-agent@sha256:<64 hex>`.
+- A Docker network named `spider-doctor-egress` whose host firewall denies host, RFC1918, link-local, metadata, Mongo, and control-plane destinations. After independently verifying that enforcement, label it `spider-doctor.egress-policy=restricted-v1`; the launcher refuses an absent or unlabeled network. The label is an operator attestation, not a substitute for the firewall itself.
+
+Never use `:latest` in production; mutable image references are rejected.
+
+## Initialize the dedicated Hermes home
+
+Create the home with the official image and configure its model/provider to use a credential-injecting proxy reachable on `spider-doctor-egress`:
+
+```bash
+mkdir -p data/hermes
+docker run -it --rm \
+  -v "$PWD/data/hermes:/opt/data" \
+  nousresearch/hermes-agent@sha256:<digest> setup
+```
+
+Do **not** save a provider API key or OAuth credential during this setup. The launcher rejects a non-empty `.env` or `auth.json` in the seed home. The proxy must authenticate the task container without exposing its upstream provider credential to Hermes or scraper subprocesses, while independently enforcing model, budget, rate, and expiry policy.
+
+The disposable clone's `AGENTS.md` is loaded automatically because Hermes starts in `/workspace`; it is the authoritative creation/repair procedure. An optional dedicated `spider-doctor` skill may add orchestration guidance, but the worker does not depend on an unverified skill installation.
+
+## Configure
+
+```bash
+export SPIDER_DOCTOR_HERMES_IMAGE='nousresearch/hermes-agent@sha256:<digest>'
+export SPIDER_DOCTOR_MONGODB_URI='mongodb://127.0.0.1:27017/spider?replicaSet=rs0&directConnection=true'
+export SPIDER_DOCTOR_SOURCE_REPOSITORY='../spider-scripts'
+export SPIDER_DOCTOR_HERMES_HOME='./data/hermes'
+```
+
+All settings use the `SPIDER_DOCTOR_` prefix. See `src/spider_doctor/settings.py` for bounded defaults.
+
+## Run
+
+Queue creation of a new scraper from a clean, pinned `spider-scripts` checkout:
+
+```bash
+uv run spider-doctor-enqueue \
+  --slug new-place \
+  --name 'New Place AG' \
+  --address 'Main Street 1, 8000 Zürich' \
+  --website 'https://example.ch'
+```
+
+Run one attempt or the continuous dispatcher:
+
+```bash
+uv sync --frozen --dev
+uv run spider-doctor-worker --once
+uv run spider-doctor-worker
+```
+
+## Task lifecycle
+
+```text
+queued -> running (lease token + attempt)
+       -> awaiting_review (validated patch)
+       -> queued (bounded retry after operational failure)
+       -> exhausted (attempt budget consumed)
+```
+
+Completion and failure transitions require the current lease token. Expired final attempts become exhausted. Existing executor revisions must populate `priority`, `attempts`, `max_attempts`, `available_at`, and `lease` when creating Doctor tasks.
+
+## Tests
+
+```bash
+uv run pytest
+```
+
+The test suite covers atomic leasing, stale completion fencing, retry/exhaustion, scoped Mongo evidence, pinned images, hardened Docker arguments, bounded process output, timeout cleanup, exact-SHA workspaces, path allowlisting, and worker completion.
