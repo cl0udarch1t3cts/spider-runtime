@@ -112,7 +112,9 @@ def test_expired_final_attempt_becomes_exhausted() -> None:
     claimed = repo.claim("doctor-1", now=now, lease_for=timedelta(seconds=1))
 
     assert repo.claim("doctor-2", now=now + timedelta(seconds=2)) is None
-    assert collection.find_one({"_id": claimed.id})["status"] == "exhausted"
+    exhausted = collection.find_one({"_id": claimed.id})
+    assert exhausted["status"] == "exhausted"
+    assert "active_key" not in exhausted
 
 
 def test_failed_attempt_is_requeued_with_backoff_until_exhausted() -> None:

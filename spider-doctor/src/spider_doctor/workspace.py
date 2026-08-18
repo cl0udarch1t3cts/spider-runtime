@@ -83,10 +83,14 @@ class GitWorkspace:
                 raise ValueError("renames and copies are not allowed in Doctor patches")
             name = entry[3:]
             path = PurePosixPath(name)
+            fixture_entry = path.parts[2] if path.parts[:2] == ("tests", "fixtures") else None
+            fixture_allowed = fixture_entry is not None and (
+                fixture_entry == slug or fixture_entry.startswith((f"{slug}_", f"{slug}."))
+            )
             allowed = (
                 name in self._GLOBAL_ALLOWED
                 or path.parts[:2] == ("scrapers", slug)
-                or path.parts[:2] == ("tests", "fixtures")
+                or fixture_allowed
             )
             candidate = workspace / Path(*path.parts)
             disk_path = candidate.resolve()

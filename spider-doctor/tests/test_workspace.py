@@ -48,6 +48,29 @@ def test_validates_only_task_scoped_changes(tmp_path: Path) -> None:
         manager.validate_changes(workspace, "example")
 
 
+def test_rejects_fixture_for_unrelated_slug(tmp_path: Path) -> None:
+    source, release = origin(tmp_path)
+    manager = GitWorkspace(source, tmp_path / "work")
+    workspace = manager.prepare("task-1", release)
+    fixtures = workspace / "tests" / "fixtures"
+    fixtures.mkdir(parents=True)
+    (fixtures / "other-place_home.html").write_text("unrelated")
+
+    with pytest.raises(ValueError, match="outside the Doctor allowlist"):
+        manager.validate_changes(workspace, "example")
+
+
+def test_accepts_fixture_scoped_to_task_slug(tmp_path: Path) -> None:
+    source, release = origin(tmp_path)
+    manager = GitWorkspace(source, tmp_path / "work")
+    workspace = manager.prepare("task-1", release)
+    fixtures = workspace / "tests" / "fixtures"
+    fixtures.mkdir(parents=True)
+    (fixtures / "example_home.html").write_text("scoped")
+
+    assert manager.validate_changes(workspace, "example") == ["tests/fixtures/example_home.html"]
+
+
 def test_rejects_workspace_whose_head_changed_after_prepare(tmp_path: Path) -> None:
     source, release = origin(tmp_path)
     manager = GitWorkspace(source, tmp_path / "work")

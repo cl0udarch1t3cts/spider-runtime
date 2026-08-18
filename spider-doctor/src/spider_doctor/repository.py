@@ -123,7 +123,8 @@ class MongoDoctorTaskRepository:
                     "status": str(DoctorStatus.EXHAUSTED),
                     "lease": None,
                     "updated_at": now,
-                }
+                },
+                "$unset": {"active_key": ""},
             },
         )
         token = str(uuid4())
