@@ -23,7 +23,6 @@ dev = [
 
 [project.scripts]
 spider-doctor-worker = "spider_doctor.main:main"
-spider-doctor-enqueue = "spider_doctor.enqueue:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

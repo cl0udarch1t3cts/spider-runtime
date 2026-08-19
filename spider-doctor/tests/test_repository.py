@@ -10,8 +10,8 @@ def queued_task(task_id: str, *, priority: int = 50, max_attempts: int = 2) -> d
     now = datetime.now(UTC)
     return {
         "_id": task_id,
-        "active_key": "example",
-        "slug": "example",
+        "active_key": "Entry_1",
+        "entry_id": "Entry_1",
         "type": "repair",
         "status": "queued",
         "priority": priority,
@@ -35,19 +35,19 @@ def test_claim_is_atomic_prioritized_and_leased() -> None:
 
     assert claimed is not None
     assert claimed.id == "high"
+    assert claimed.entry_id == "Entry_1"
     assert claimed.status == DoctorStatus.RUNNING
     assert claimed.attempts == 1
     assert claimed.lease is not None
-    assert claimed.lease.worker_id == "doctor-1"
 
 
-def test_ensure_indexes_backfills_legacy_executor_tasks() -> None:
+def test_ensure_indexes_backfills_executor_tasks_without_slug() -> None:
     collection = mongomock.MongoClient().spider.doctor_tasks
     collection.insert_one(
         {
             "_id": "legacy",
-            "active_key": "example",
-            "slug": "example",
+            "active_key": "Entry_1",
+            "entry_id": "Entry_1",
             "type": "repair",
             "status": "queued",
             "source_run_id": "job:1",
@@ -60,48 +60,45 @@ def test_ensure_indexes_backfills_legacy_executor_tasks() -> None:
     claimed = repo.claim("doctor-1")
 
     assert claimed is not None
-    assert claimed.id == "legacy"
     assert claimed.attempts == 1
     assert claimed.max_attempts == 2
 
 
-def test_stale_lease_cannot_complete_task() -> None:
+def test_stale_or_expired_lease_cannot_persist_candidate() -> None:
     collection = mongomock.MongoClient().spider.doctor_tasks
     collection.insert_one(queued_task("task"))
-    repo = MongoDoctorTaskRepository(collection)
-    stale = repo.claim("doctor-1", lease_for=timedelta(seconds=1))
-    collection.update_one({"_id": stale.id}, {"$set": {"lease.token": "replacement"}})
-
-    assert not repo.complete(stale.id, stale.lease.token, DoctorStatus.AWAITING_REVIEW, {"summary": "fixed"})
-    assert collection.find_one({"_id": stale.id})["status"] == "running"
-
-
-def test_expired_lease_cannot_complete_even_before_reclaim() -> None:
-    collection = mongomock.MongoClient().spider.doctor_tasks
-    collection.insert_one(queued_task("expired"))
     repo = MongoDoctorTaskRepository(collection)
     now = datetime.now(UTC)
     claimed = repo.claim("doctor-1", now=now, lease_for=timedelta(seconds=1))
 
-    assert not repo.complete(
+    assert not repo.record_candidate(
         claimed.id,
         claimed.lease.token,
-        DoctorStatus.AWAITING_REVIEW,
-        {"summary": "late"},
+        "a" * 40,
+        {"summary": "verified"},
         now=now + timedelta(seconds=2),
     )
-    assert collection.find_one({"_id": claimed.id})["status"] == "running"
+    assert "candidate_sha" not in collection.find_one({"_id": claimed.id})
 
 
-def test_claim_ignores_noneligible_operational_failure() -> None:
+def test_candidate_is_durable_before_publication_and_completion_is_fenced() -> None:
     collection = mongomock.MongoClient().spider.doctor_tasks
-    document = queued_task("network")
-    document["failure_class"] = "NETWORK_TIMEOUT"
-    collection.insert_one(document)
+    collection.insert_one(queued_task("task"))
     repo = MongoDoctorTaskRepository(collection)
+    claimed = repo.claim("doctor-1")
+    result = {"summary": "verified", "changed_files": ["scrapers/Entry_1/scrape.py"]}
 
-    assert repo.claim("doctor-1") is None
-    assert collection.find_one({"_id": "network"})["status"] == "queued"
+    assert repo.record_candidate(claimed.id, claimed.lease.token, "a" * 40, result)
+    durable = collection.find_one({"_id": claimed.id})
+    assert durable["candidate_sha"] == "a" * 40
+    assert durable["candidate_result"] == result
+    assert not repo.complete_publication(claimed.id, "wrong", "a" * 40)
+    assert repo.complete_publication(claimed.id, claimed.lease.token, "a" * 40)
+    completed = collection.find_one({"_id": claimed.id})
+    assert completed["status"] == "succeeded"
+    assert completed["result"]["commit_sha"] == "a" * 40
+    assert completed["lease"] is None
+    assert "active_key" not in completed
 
 
 def test_expired_final_attempt_becomes_exhausted() -> None:
@@ -142,25 +139,41 @@ def test_failed_attempt_is_requeued_with_backoff_until_exhausted() -> None:
     assert document["last_error"] == "agent failed"
 
 
-def test_enqueue_create_task_is_idempotent_and_pins_base_release() -> None:
+def test_persisted_candidate_is_requeued_for_publication_without_new_attempt() -> None:
     collection = mongomock.MongoClient().spider.doctor_tasks
+    collection.insert_one(queued_task("task", max_attempts=1))
     repo = MongoDoctorTaskRepository(collection)
-
-    first = repo.enqueue_create(
-        slug="new-place",
-        name="New Place",
-        address="Main Street 1, 8000 Zürich",
-        base_release="a" * 40,
-    )
-    second = repo.enqueue_create(
-        slug="new-place",
-        name="New Place",
-        address="Main Street 1, 8000 Zürich",
-        base_release="a" * 40,
+    now = datetime.now(UTC)
+    claimed = repo.claim("doctor-1", now=now)
+    assert repo.record_candidate(
+        claimed.id,
+        claimed.lease.token,
+        "a" * 40,
+        {"status": "awaiting_review", "summary": "verified"},
+        now=now,
     )
 
-    assert first.id == second.id
-    assert collection.count_documents({}) == 1
-    assert first.type == "create"
-    assert first.scraper_release == "a" * 40
-    assert first.request["address"] == "Main Street 1, 8000 Zürich"
+    status = repo.fail_attempt(
+        claimed.id,
+        claimed.lease.token,
+        "push unavailable",
+        attempts=claimed.attempts,
+        max_attempts=claimed.max_attempts,
+        now=now,
+        retry_after=timedelta(seconds=1),
+    )
+    reclaimed = repo.claim("doctor-2", now=now + timedelta(seconds=2))
+
+    assert status == DoctorStatus.QUEUED
+    assert reclaimed is not None
+    assert reclaimed.candidate_sha == "a" * 40
+    assert reclaimed.attempts == 1
+
+
+def test_claim_ignores_noneligible_operational_failure() -> None:
+    collection = mongomock.MongoClient().spider.doctor_tasks
+    document = queued_task("network")
+    document["failure_class"] = "NETWORK_TIMEOUT"
+    collection.insert_one(document)
+
+    assert MongoDoctorTaskRepository(collection).claim("doctor-1") is None

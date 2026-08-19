@@ -11,9 +11,9 @@ The Hermes container receives only:
 - a task result directory;
 - a dedicated Hermes data directory.
 
-It does **not** receive MongoDB credentials, production artifacts, GitHub credentials, or `/var/run/docker.sock`. It is non-root, capability-free, read-only except for the task mounts, resource-limited, and attached only to a named egress network. The dispatcher validates the actual Git diff and rejects changes outside the slug-specific allowlist.
+It does **not** receive MongoDB credentials, production artifacts, GitHub credentials, or `/var/run/docker.sock`. It is non-root, capability-free, read-only except for the task mounts, resource-limited, and attached only to a named egress network. The dispatcher validates the actual Git diff and rejects changes outside the `entry_id`-specific allowlist.
 
-The dispatcher does not push or merge. Successful attempts stop at `awaiting_review`; a separate trusted promotion step should independently test the patch and open a PR.
+After the disposable agent returns a verified patch, the trusted host dispatcher stages only the validated paths, commits, persists the candidate SHA in MongoDB, and pushes it. The task becomes `succeeded` only after the candidate is reachable from the configured publication branch. A crash or ambiguous push is reconciled from the durable candidate SHA without regenerating code.
 
 ## Prerequisites
 
@@ -104,15 +104,7 @@ network/firewall policy before applying the required network attestation label.
 
 ## Run
 
-Queue creation of a new scraper from a clean, pinned `spider-scripts` checkout:
-
-```bash
-uv run spider-doctor-enqueue \
-  --slug new-place \
-  --name 'New Place AG' \
-  --address 'Main Street 1, 8000 Zürich' \
-  --website 'https://example.ch'
-```
+Creation and repair tasks are written by `spider-executor`. Doctor reads the authoritative `entry_id`, business identity, base release, and failure evidence from MongoDB; there is no separate enqueue command or slug contract.
 
 Run one attempt or the continuous dispatcher:
 
@@ -126,7 +118,7 @@ uv run spider-doctor-worker
 
 ```text
 queued -> running (lease token + attempt)
-       -> awaiting_review (validated patch)
+       -> candidate SHA persisted -> pushed -> succeeded
        -> queued (bounded retry after operational failure)
        -> exhausted (attempt budget consumed)
 ```

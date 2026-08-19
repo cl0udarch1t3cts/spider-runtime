@@ -9,6 +9,7 @@ from pymongo import MongoClient
 
 from spider_doctor.evidence import MongoEvidenceLoader
 from spider_doctor.launcher import DockerHermesLauncher, LauncherConfig
+from spider_doctor.publisher import TrustedGitPublisher
 from spider_doctor.repository import MongoDoctorTaskRepository
 from spider_doctor.settings import Settings
 from spider_doctor.worker import DoctorWorker
@@ -46,6 +47,11 @@ def create_worker(settings: Settings) -> DoctorWorker:
                 timeout_seconds=settings.agent_timeout_seconds,
                 max_turns=settings.agent_max_turns,
             )
+        ),
+        TrustedGitPublisher(
+            branch=settings.publication_branch,
+            author_name=settings.git_author_name,
+            author_email=settings.git_author_email,
         ),
         worker_id=settings.worker_id,
         task_root=settings.task_root,

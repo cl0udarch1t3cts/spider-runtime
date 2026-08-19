@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     proxy_token_file: Path | None = None
     docker_binary: str = "docker"
     docker_network: str = "spider-doctor-egress"
+    publication_branch: str = "main"
+    git_author_name: str = "Spider Doctor"
+    git_author_email: str = "spider-doctor@localhost"
     agent_timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     agent_max_turns: int = Field(default=40, ge=1, le=100)
 

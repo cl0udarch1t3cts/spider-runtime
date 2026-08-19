@@ -18,6 +18,7 @@ class DoctorStatus(StrEnum):
     AWAITING_REVIEW = "awaiting_review"
     FAILED = "failed"
     EXHAUSTED = "exhausted"
+    SUCCEEDED = "succeeded"
 
 
 class Lease(BaseModel):
@@ -30,7 +31,7 @@ class DoctorTask(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str = Field(alias="_id", pattern=r"^[A-Za-z0-9:._-]{1,255}$")
-    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,127}$")
+    entry_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
     type: Literal["repair", "create"] = "repair"
     status: DoctorStatus = DoctorStatus.QUEUED
     priority: int = 50
@@ -40,8 +41,9 @@ class DoctorTask(BaseModel):
     source_run_id: str | None = None
     failure_class: str = "NEW_SCRAPER"
     errors: list[str] = Field(default_factory=list)
-    scraper_release: str | None = None
-    request: dict[str, str] = Field(default_factory=dict)
+    base_release: str | None = None
+    candidate_sha: str | None = None
+    candidate_result: dict[str, Any] | None = None
     lease: Lease | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

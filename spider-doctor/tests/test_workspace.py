@@ -48,7 +48,7 @@ def test_validates_only_task_scoped_changes(tmp_path: Path) -> None:
         manager.validate_changes(workspace, "example")
 
 
-def test_rejects_fixture_for_unrelated_slug(tmp_path: Path) -> None:
+def test_rejects_fixture_for_unrelated_entry(tmp_path: Path) -> None:
     source, release = origin(tmp_path)
     manager = GitWorkspace(source, tmp_path / "work")
     workspace = manager.prepare("task-1", release)
@@ -60,15 +60,38 @@ def test_rejects_fixture_for_unrelated_slug(tmp_path: Path) -> None:
         manager.validate_changes(workspace, "example")
 
 
-def test_accepts_fixture_scoped_to_task_slug(tmp_path: Path) -> None:
+def test_accepts_fixture_directory_scoped_to_entry_id(tmp_path: Path) -> None:
     source, release = origin(tmp_path)
     manager = GitWorkspace(source, tmp_path / "work")
     workspace = manager.prepare("task-1", release)
     fixtures = workspace / "tests" / "fixtures"
     fixtures.mkdir(parents=True)
-    (fixtures / "example_home.html").write_text("scoped")
+    owned = fixtures / "Example_1"
+    owned.mkdir()
+    (owned / "home.html").write_text("scoped")
 
-    assert manager.validate_changes(workspace, "example") == ["tests/fixtures/example_home.html"]
+    assert manager.validate_changes(workspace, "Example_1") == ["tests/fixtures/Example_1/home.html"]
+
+
+def test_entry_id_uses_spider_scripts_safe_identifier_grammar(tmp_path: Path) -> None:
+    source, release = origin(tmp_path)
+    manager = GitWorkspace(source, tmp_path / "work")
+    workspace = manager.prepare("task-1", release)
+    scraper = workspace / "scrapers" / "Entry_1.2"
+    scraper.mkdir(parents=True)
+    (scraper / "scrape.py").write_text("pass\n")
+
+    assert manager.validate_changes(workspace, "Entry_1.2") == ["scrapers/Entry_1.2/scrape.py"]
+
+
+@pytest.mark.parametrize("entry_id", ["../escape", "/absolute", "bad/name", "-leading", "x" * 129])
+def test_rejects_unsafe_entry_id(tmp_path: Path, entry_id: str) -> None:
+    source, release = origin(tmp_path)
+    manager = GitWorkspace(source, tmp_path / "work")
+    workspace = manager.prepare("task-1", release)
+
+    with pytest.raises(ValueError, match="unsafe entry_id"):
+        manager.validate_changes(workspace, entry_id)
 
 
 def test_rejects_workspace_whose_head_changed_after_prepare(tmp_path: Path) -> None:

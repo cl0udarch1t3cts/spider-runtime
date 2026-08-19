@@ -13,7 +13,7 @@ def task() -> DoctorTask:
     return DoctorTask.model_validate(
         {
             "_id": "task-1",
-            "slug": "example",
+            "entry_id": "example",
             "type": "repair",
             "status": "running",
             "attempts": 1,

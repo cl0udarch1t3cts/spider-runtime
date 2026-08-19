@@ -54,6 +54,16 @@ class GitWorkspace:
             text=True,
             timeout=120,
         )
+        source_remote = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=self.source_repository,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if source_remote.returncode == 0 and source_remote.stdout.strip():
+            self._run(workspace, "remote", "set-url", "origin", source_remote.stdout.strip())
         self._run(workspace, "checkout", "--quiet", "--detach", release)
         if self._run(workspace, "rev-parse", "HEAD") != release:
             raise RuntimeError("workspace did not resolve to requested release")
@@ -62,15 +72,26 @@ class GitWorkspace:
         self._expected_heads[workspace.resolve()] = release
         return workspace
 
-    def validate_changes(self, workspace: Path, slug: str) -> list[str]:
+    def resume(self, task_id: str, candidate_sha: str) -> Path:
+        if not re.fullmatch(r"[0-9a-f]{40}", candidate_sha):
+            raise ValueError("candidate SHA must be a full 40-character Git SHA")
+        safe_id = re.sub(r"[^A-Za-z0-9_.-]", "-", task_id).strip("-.")
+        workspace = (self.workspace_root / safe_id).resolve()
+        if not workspace.is_dir() or not (workspace / ".git").is_dir():
+            raise RuntimeError("persisted Doctor candidate workspace is unavailable")
+        if self._run(workspace, "rev-parse", "HEAD") != candidate_sha:
+            raise RuntimeError("persisted Doctor candidate workspace does not match candidate SHA")
+        return workspace
+
+    def validate_changes(self, workspace: Path, entry_id: str) -> list[str]:
         workspace = workspace.resolve()
         expected_head = self._expected_heads.get(workspace)
         if expected_head is None:
             raise ValueError("workspace was not prepared by this dispatcher")
         if self._run(workspace, "rev-parse", "HEAD") != expected_head:
             raise ValueError("workspace HEAD changed during Doctor execution")
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,127}", slug):
-            raise ValueError("unsafe slug")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", entry_id):
+            raise ValueError("unsafe entry_id")
         output = self._run_raw(workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all")
         changed: list[str] = []
         for entry in output.split("\0"):
@@ -83,13 +104,10 @@ class GitWorkspace:
                 raise ValueError("renames and copies are not allowed in Doctor patches")
             name = entry[3:]
             path = PurePosixPath(name)
-            fixture_entry = path.parts[2] if path.parts[:2] == ("tests", "fixtures") else None
-            fixture_allowed = fixture_entry is not None and (
-                fixture_entry == slug or fixture_entry.startswith((f"{slug}_", f"{slug}."))
-            )
+            fixture_allowed = path.parts[:3] == ("tests", "fixtures", entry_id)
             allowed = (
                 name in self._GLOBAL_ALLOWED
-                or path.parts[:2] == ("scrapers", slug)
+                or path.parts[:2] == ("scrapers", entry_id)
                 or fixture_allowed
             )
             candidate = workspace / Path(*path.parts)
