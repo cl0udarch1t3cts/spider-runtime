@@ -25,7 +25,8 @@ def test_runner_executes_core_run_and_stores_output(tmp_path: Path) -> None:
     (scripts / "core").mkdir(parents=True)
     (scripts / "core" / "__init__.py").write_text("")
     (scripts / "core" / "run.py").write_text(
-        "import json; print(json.dumps({'slug':'example','website':'https://example.com','fields':{'NAME':{'value':'Example','source':'https://example.com'}},'errors':[]}))"
+        "import json, sys; assert sys.argv[1:] == ['--entry-id', 'example']; "
+        "print(json.dumps({'entry_id':'example','website':'https://example.com','fields':{'NAME':{'value':'Example','source':'https://example.com'}},'errors':[]}))"
     )
     init_git(scripts)
     store = LocalArtifactStore(tmp_path / "artifacts")
@@ -34,7 +35,7 @@ def test_runner_executes_core_run_and_stores_output(tmp_path: Path) -> None:
     result = runner.run("example", "run-1")
 
     assert result.exit_code == 0
-    assert result.record.slug == "example"
+    assert result.record.entry_id == "example"
     assert store.get(result.output_artifact.key) == json.dumps(result.record.model_dump(mode="json"), indent=2).encode()
 
 
@@ -86,7 +87,7 @@ def test_runner_reports_exact_git_release(tmp_path: Path) -> None:
     (scripts / "core").mkdir(parents=True)
     (scripts / "core" / "__init__.py").write_text("")
     (scripts / "core" / "run.py").write_text(
-        "import json; print(json.dumps({'slug':'example','fields':{},'errors':[]}))"
+        "import json; print(json.dumps({'entry_id':'example','fields':{},'errors':[]}))"
     )
     expected = init_git(scripts)
 

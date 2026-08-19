@@ -2,10 +2,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+
+EntryId = Annotated[
+    str,
+    Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"),
+]
+BusinessName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
+BusinessAddress = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
 def utcnow() -> datetime:
@@ -31,6 +38,7 @@ class FailureClass(StrEnum):
     OUTPUT_SCHEMA_FAILURE = "OUTPUT_SCHEMA_FAILURE"
     SEMANTIC_VALIDATION_FAILURE = "SEMANTIC_VALIDATION_FAILURE"
     IDENTITY_MISMATCH = "IDENTITY_MISMATCH"
+    RELEASE_MISMATCH = "RELEASE_MISMATCH"
     SANDBOX_TIMEOUT = "SANDBOX_TIMEOUT"
     INACTIVE_ENTRY = "INACTIVE_ENTRY"
     UNKNOWN = "UNKNOWN"
@@ -53,7 +61,7 @@ class Lease(BaseModel):
 
 class ExecutionJob(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    slug: str
+    entry_id: EntryId
     idempotency_key: str
     trigger: str = "manual"
     priority: int = 50
@@ -73,7 +81,7 @@ class ScrapedField(BaseModel):
 
 
 class ScrapedRecord(BaseModel):
-    slug: str
+    entry_id: EntryId
     website: str | None = None
     fetched_at: datetime = Field(default_factory=utcnow)
     fields: dict[str, ScrapedField]
@@ -95,9 +103,10 @@ class EntryValidation(BaseModel):
 
 
 class Entry(BaseModel):
-    slug: str
-    name: str
-    website: str
+    entry_id: EntryId
+    businessname: BusinessName
+    address: BusinessAddress = ""
+    website: str | None = None
     active: bool = True
     scraper_release: str | None = None
     validation: EntryValidation = Field(default_factory=EntryValidation)
@@ -123,7 +132,7 @@ class RunnerResult(BaseModel):
 class ExecutionRun(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     job_id: str
-    slug: str
+    entry_id: EntryId
     scraper_release: str | None = None
     status: JobStatus
     failure_class: FailureClass | None = None

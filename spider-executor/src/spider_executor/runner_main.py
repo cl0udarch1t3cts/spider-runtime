@@ -10,5 +10,6 @@ runner = SpiderRunner(
     settings.scripts_root,
     LocalArtifactStore(Path("/tmp/runner-artifacts")),
     timeout_seconds=settings.runner_timeout_seconds,
+    runtime_lock_path=settings.runtime_lock_path,
 )
 app = create_runner_app(runner)

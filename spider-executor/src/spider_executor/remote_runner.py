@@ -21,19 +21,19 @@ class HttpSpiderRunner:
         self.max_response_bytes = max_response_bytes
 
     @staticmethod
-    def _failure(slug: str, message: str, failure: FailureClass) -> RunnerResult:
+    def _failure(entry_id: str, message: str, failure: FailureClass) -> RunnerResult:
         return RunnerResult(
             exit_code=2,
-            record=ScrapedRecord(slug=slug, fields={}, errors=[message]),
+            record=ScrapedRecord(entry_id=entry_id, fields={}, errors=[message]),
             output_artifact=Artifact(key="unpersisted", size_bytes=0, sha256="0" * 64),
             stderr=message,
             failure_class=failure,
         )
 
-    def run(self, slug: str, run_id: str) -> RunnerResult:
+    def run(self, entry_id: str, run_id: str) -> RunnerResult:
         try:
             with self.client.stream(
-                "POST", f"{self.base_url}/run", json={"slug": slug, "run_id": run_id}
+                "POST", f"{self.base_url}/run", json={"entry_id": entry_id, "run_id": run_id}
             ) as response:
                 response.raise_for_status()
                 content = bytearray()
@@ -41,15 +41,15 @@ class HttpSpiderRunner:
                     content.extend(chunk)
                     if len(content) > self.max_response_bytes:
                         return self._failure(
-                            slug,
+                            entry_id,
                             "runner response exceeded configured limit",
                             FailureClass.OUTPUT_SCHEMA_FAILURE,
                         )
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            return self._failure(slug, f"isolated runner unavailable: {exc}", FailureClass.NETWORK_TIMEOUT)
+            return self._failure(entry_id, f"isolated runner unavailable: {exc}", FailureClass.NETWORK_TIMEOUT)
         except httpx.HTTPError as exc:
-            return self._failure(slug, f"isolated runner HTTP failure: {exc}", FailureClass.UNKNOWN)
+            return self._failure(entry_id, f"isolated runner HTTP failure: {exc}", FailureClass.UNKNOWN)
         try:
             return RunnerResult.model_validate(json.loads(content))
         except (json.JSONDecodeError, ValueError) as exc:
-            return self._failure(slug, f"invalid isolated runner response: {exc}", FailureClass.OUTPUT_SCHEMA_FAILURE)
+            return self._failure(entry_id, f"invalid isolated runner response: {exc}", FailureClass.OUTPUT_SCHEMA_FAILURE)

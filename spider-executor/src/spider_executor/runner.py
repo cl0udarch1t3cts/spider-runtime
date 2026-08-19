@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import signal
@@ -25,6 +26,7 @@ class SpiderRunner:
         timeout_seconds: int = 90,
         max_output_bytes: int = 1024 * 1024,
         memory_limit_bytes: int = 512 * 1024 * 1024,
+        runtime_lock_path: Path | None = None,
     ) -> None:
         self.scripts_root = scripts_root.resolve()
         self.artifacts = artifacts
@@ -32,6 +34,7 @@ class SpiderRunner:
         self.timeout_seconds = timeout_seconds
         self.max_output_bytes = max_output_bytes
         self.memory_limit_bytes = memory_limit_bytes
+        self.runtime_lock_path = runtime_lock_path.resolve() if runtime_lock_path else None
 
     def _git(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -45,7 +48,7 @@ class SpiderRunner:
 
     def _failure(
         self,
-        slug: str,
+        entry_id: str,
         run_id: str,
         failure: FailureClass,
         message: str,
@@ -54,7 +57,7 @@ class SpiderRunner:
         exit_code: int = 2,
         stderr: str = "",
     ) -> RunnerResult:
-        record = ScrapedRecord(slug=slug, website=None, fields={}, errors=[message])
+        record = ScrapedRecord(entry_id=entry_id, website=None, fields={}, errors=[message])
         content = json.dumps(record.model_dump(mode="json"), indent=2).encode()
         artifact = self.artifacts.put(f"runs/{run_id}/output.json", content)
         return RunnerResult(
@@ -66,18 +69,26 @@ class SpiderRunner:
             failure_class=failure,
         )
 
-    def run(self, slug: str, run_id: str) -> RunnerResult:
+    def run(self, entry_id: str, run_id: str) -> RunnerResult:
+        if self.runtime_lock_path is None:
+            return self._run_unlocked(entry_id, run_id)
+        self.runtime_lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.runtime_lock_path.open("a+") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_SH)
+            return self._run_unlocked(entry_id, run_id)
+
+    def _run_unlocked(self, entry_id: str, run_id: str) -> RunnerResult:
         try:
             release_process = self._git("rev-parse", "--verify", "HEAD^{commit}")
             dirty_process = self._git("status", "--porcelain", "--untracked-files=all")
         except (OSError, subprocess.SubprocessError) as exc:
-            return self._failure(slug, run_id, FailureClass.OUTPUT_SCHEMA_FAILURE, f"Git metadata unavailable: {exc}")
+            return self._failure(entry_id, run_id, FailureClass.OUTPUT_SCHEMA_FAILURE, f"Git metadata unavailable: {exc}")
         if release_process.returncode != 0:
-            return self._failure(slug, run_id, FailureClass.OUTPUT_SCHEMA_FAILURE, "Git commit metadata unavailable")
+            return self._failure(entry_id, run_id, FailureClass.OUTPUT_SCHEMA_FAILURE, "Git commit metadata unavailable")
         release = release_process.stdout.strip()
         if dirty_process.returncode != 0 or dirty_process.stdout.strip():
             return self._failure(
-                slug,
+                entry_id,
                 run_id,
                 FailureClass.OUTPUT_SCHEMA_FAILURE,
                 "spider-scripts checkout is dirty or unreadable",
@@ -101,8 +112,8 @@ class SpiderRunner:
                             self.python_executable,
                             "-m",
                             "core.run",
-                            "--slug",
-                            slug,
+                            "--entry-id",
+                            entry_id,
                         ],
                         cwd=self.scripts_root,
                         stdout=stdout_handle,
@@ -121,7 +132,7 @@ class SpiderRunner:
                         os.killpg(process.pid, signal.SIGKILL)
                         process.wait()
                     return self._failure(
-                        slug,
+                        entry_id,
                         run_id,
                         FailureClass.SANDBOX_TIMEOUT,
                         f"scraper timed out after {self.timeout_seconds} seconds",
@@ -130,7 +141,7 @@ class SpiderRunner:
                     )
                 except OSError as exc:
                     return self._failure(
-                        slug,
+                        entry_id,
                         run_id,
                         FailureClass.UNKNOWN,
                         f"scraper process could not start: {exc}",
@@ -150,7 +161,7 @@ class SpiderRunner:
             dirty_after = self._git("status", "--porcelain", "--untracked-files=all")
         except (OSError, subprocess.SubprocessError) as exc:
             return self._failure(
-                slug,
+                entry_id,
                 run_id,
                 FailureClass.OUTPUT_SCHEMA_FAILURE,
                 f"Git metadata unavailable after execution: {exc}",
@@ -163,7 +174,7 @@ class SpiderRunner:
             or dirty_after.stdout.strip()
         ):
             return self._failure(
-                slug,
+                entry_id,
                 run_id,
                 FailureClass.OUTPUT_SCHEMA_FAILURE,
                 "spider-scripts checkout changed during execution",
@@ -172,7 +183,7 @@ class SpiderRunner:
 
         if len(stdout) >= self.max_output_bytes or len(stderr_bytes) >= self.max_output_bytes:
             return self._failure(
-                slug,
+                entry_id,
                 run_id,
                 FailureClass.OUTPUT_SCHEMA_FAILURE,
                 "scraper output exceeded configured limit",
@@ -184,7 +195,7 @@ class SpiderRunner:
             record = ScrapedRecord.model_validate(json.loads(stdout_text))
         except (json.JSONDecodeError, ValidationError) as exc:
             return self._failure(
-                slug,
+                entry_id,
                 run_id,
                 FailureClass.OUTPUT_SCHEMA_FAILURE,
                 f"invalid runner output: {exc}",

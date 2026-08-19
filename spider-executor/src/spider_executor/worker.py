@@ -11,7 +11,7 @@ from spider_executor.validation import RecordExpectations, validate_record
 
 
 class Runner(Protocol):
-    def run(self, slug: str, run_id: str) -> RunnerResult: ...
+    def run(self, entry_id: str, run_id: str) -> RunnerResult: ...
 
 
 class ExecutorWorker:
@@ -29,6 +29,7 @@ class ExecutorWorker:
         self.artifacts = artifacts
 
     def process_one(self) -> ExecutionRun | None:
+        self.service.consume_next_doctor_handoff()
         job = self.service.claim(self.worker_id)
         if job is None:
             return None
@@ -36,14 +37,14 @@ class ExecutorWorker:
         run = ExecutionRun(
             id=run_id,
             job_id=job.id,
-            slug=job.slug,
+            entry_id=job.entry_id,
             scraper_release=job.scraper_release,
             status=JobStatus.RUNNING,
         )
         self.service.save_run(run)
-        entry = self.service.get_entry(job.slug)
+        entry = self.service.get_entry(job.entry_id)
         if entry is None:
-            errors = [f"entry {job.slug!r} is not registered"]
+            errors = [f"entry {job.entry_id!r} is not registered"]
             return self._fail(job.id, job.lease.token, run, FailureClass.OUTPUT_SCHEMA_FAILURE, errors)
         if not entry.active:
             return self._fail(
@@ -51,10 +52,18 @@ class ExecutorWorker:
                 job.lease.token,
                 run,
                 FailureClass.INACTIVE_ENTRY,
-                [f"entry {job.slug!r} is inactive"],
+                [f"entry {job.entry_id!r} is inactive"],
+            )
+        if not self.service.is_entry_release_activated(job.entry_id, job.scraper_release):
+            return self._fail(
+                job.id,
+                job.lease.token,
+                run,
+                FailureClass.INACTIVE_ENTRY,
+                [f"entry {job.entry_id!r} has no activated scraper release"],
             )
 
-        result = self.runner.run(job.slug, run_id)
+        result = self.runner.run(job.entry_id, run_id)
         if self.artifacts is not None:
             try:
                 content = json.dumps(result.record.model_dump(mode="json"), indent=2).encode()
@@ -71,20 +80,20 @@ class ExecutorWorker:
         if result.failure_class is not None:
             errors = result.record.errors or [result.stderr or f"runner exited {result.exit_code}"]
             return self._fail(job.id, job.lease.token, run, result.failure_class, errors)
-        if result.record.slug != job.slug:
+        if result.record.entry_id != job.entry_id:
             return self._fail(
                 job.id,
                 job.lease.token,
                 run,
                 FailureClass.IDENTITY_MISMATCH,
-                [f"record slug mismatch: expected {job.slug}, got {result.record.slug}"],
+                [f"record entry_id mismatch: expected {job.entry_id}, got {result.record.entry_id}"],
             )
         if entry.scraper_release and result.scraper_release != entry.scraper_release:
             return self._fail(
                 job.id,
                 job.lease.token,
                 run,
-                FailureClass.IDENTITY_MISMATCH,
+                FailureClass.RELEASE_MISMATCH,
                 [
                     (
                         f"scraper release mismatch: expected {entry.scraper_release}, "

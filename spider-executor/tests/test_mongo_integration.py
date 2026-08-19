@@ -24,12 +24,28 @@ def test_real_mongodb_indexes_upsert_and_atomic_claim() -> None:
     service = MongoControlService(db)
     service.ensure_indexes()
 
-    service.put_entry(Entry(slug="example", name="First", website="https://example.com"))
-    updated = service.put_entry(Entry(slug="example", name="Updated", website="https://example.com"))
-    assert updated.name == "Updated"
+    service.put_entry(
+        Entry(
+            entry_id="example",
+            businessname="First",
+            address="Bern",
+            website="https://example.com",
+            scraper_release="a" * 40,
+        )
+    )
+    updated = service.put_entry(
+        Entry(
+            entry_id="example",
+            businessname="Updated",
+            address="Bern",
+            website="https://example.com",
+            scraper_release="a" * 40,
+        )
+    )
+    assert updated.businessname == "Updated"
 
-    job = service.enqueue(ExecutionJob(slug="example", idempotency_key="integration:1"))
-    duplicate = service.enqueue(ExecutionJob(slug="example", idempotency_key="integration:1"))
+    job = service.enqueue(ExecutionJob(entry_id="example", idempotency_key="integration:1"))
+    duplicate = service.enqueue(ExecutionJob(entry_id="example", idempotency_key="integration:1"))
     claimed = service.claim("integration-worker")
 
     assert duplicate.id == job.id
@@ -38,11 +54,11 @@ def test_real_mongodb_indexes_upsert_and_atomic_claim() -> None:
     run = ExecutionRun(
         id=f"{claimed.id}:{claimed.attempts}",
         job_id=claimed.id,
-        slug="example",
+        entry_id="example",
         status=JobStatus.RUNNING,
     )
     record = ScrapedRecord(
-        slug="example",
+        entry_id="example",
         website="https://example.com",
         fields={"NAME": {"value": "Example", "source": "https://example.com"}},
     )

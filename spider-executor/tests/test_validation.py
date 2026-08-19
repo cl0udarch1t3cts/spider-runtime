@@ -3,7 +3,7 @@ from spider_executor.validation import RecordExpectations, validate_record
 
 
 def record(fields: dict) -> ScrapedRecord:
-    return ScrapedRecord(slug="example", website="https://example.com", fields=fields)
+    return ScrapedRecord(entry_id="example", website="https://example.com", fields=fields)
 
 
 def test_accepts_required_fields_with_provenance() -> None:

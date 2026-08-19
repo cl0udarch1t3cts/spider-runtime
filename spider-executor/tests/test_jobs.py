@@ -1,14 +1,21 @@
 from datetime import UTC, datetime, timedelta
 
 import mongomock
+import pytest
+from pydantic import ValidationError
 
 from spider_executor.jobs import MongoJobRepository
 from spider_executor.models import ExecutionJob, JobStatus
 
 
+def test_job_rejects_unsafe_entry_id() -> None:
+    with pytest.raises(ValidationError):
+        ExecutionJob(entry_id="../escape", idempotency_key="unsafe")
+
+
 def test_idempotency_key_prevents_duplicate_jobs() -> None:
     repo = MongoJobRepository(mongomock.MongoClient().db.execution_jobs)
-    job = ExecutionJob(slug="example", idempotency_key="manual:example:1")
+    job = ExecutionJob(entry_id="example", idempotency_key="manual:example:1")
     first = repo.enqueue(job)
     second = repo.enqueue(job)
     assert first.id == second.id
@@ -19,13 +26,13 @@ def test_worker_atomically_claims_highest_priority_available_job() -> None:
     repo = MongoJobRepository(mongomock.MongoClient().db.execution_jobs)
     now = datetime.now(UTC)
     available = now - timedelta(seconds=1)
-    repo.enqueue(ExecutionJob(slug="low", idempotency_key="low", priority=10, available_at=available))
-    repo.enqueue(ExecutionJob(slug="high", idempotency_key="high", priority=90, available_at=available))
+    repo.enqueue(ExecutionJob(entry_id="low", idempotency_key="low", priority=10, available_at=available))
+    repo.enqueue(ExecutionJob(entry_id="high", idempotency_key="high", priority=90, available_at=available))
 
     claimed = repo.claim("worker-1", now=now, lease_for=timedelta(minutes=5))
 
     assert claimed is not None
-    assert claimed.slug == "high"
+    assert claimed.entry_id == "high"
     assert claimed.status == JobStatus.RUNNING
     assert claimed.lease.worker_id == "worker-1"
 
@@ -35,7 +42,7 @@ def test_stale_worker_cannot_finish_reclaimed_job() -> None:
     now = datetime.now(UTC)
     repo.enqueue(
         ExecutionJob(
-            slug="example",
+            entry_id="example",
             idempotency_key="fenced",
             available_at=now - timedelta(seconds=1),
         )
@@ -56,7 +63,7 @@ def test_expired_final_attempt_becomes_exhausted() -> None:
     now = datetime.now(UTC)
     repo.enqueue(
         ExecutionJob(
-            slug="example",
+            entry_id="example",
             idempotency_key="exhausted",
             max_attempts=1,
             available_at=now - timedelta(seconds=1),
@@ -71,7 +78,9 @@ def test_expired_final_attempt_becomes_exhausted() -> None:
 def test_expired_lease_can_be_reclaimed() -> None:
     repo = MongoJobRepository(mongomock.MongoClient().db.execution_jobs)
     now = datetime.now(UTC)
-    enqueued = repo.enqueue(ExecutionJob(slug="example", idempotency_key="lease"))
+    enqueued = repo.enqueue(
+        ExecutionJob(entry_id="example", idempotency_key="lease", available_at=now)
+    )
     first = repo.claim("dead-worker", now=now, lease_for=timedelta(seconds=1))
     assert first is not None
 

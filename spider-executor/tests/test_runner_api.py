@@ -9,10 +9,10 @@ from spider_executor.runner_api import create_runner_app
 
 
 class FakeRunner:
-    def run(self, slug: str, run_id: str) -> RunnerResult:
+    def run(self, entry_id: str, run_id: str) -> RunnerResult:
         return RunnerResult(
             exit_code=0,
-            record=ScrapedRecord(slug=slug, fields={}),
+            record=ScrapedRecord(entry_id=entry_id, fields={}),
             output_artifact=Artifact(key=f"runs/{run_id}/output.json", size_bytes=1, sha256="0" * 64),
             scraper_release="abc123",
         )
@@ -20,7 +20,7 @@ class FakeRunner:
 
 def test_runner_api_returns_structured_result() -> None:
     response = TestClient(create_runner_app(FakeRunner())).post(
-        "/run", json={"slug": "example", "run_id": "job:1"}
+        "/run", json={"entry_id": "example", "run_id": "job:1"}
     )
     assert response.status_code == 200
     assert response.json()["scraper_release"] == "abc123"

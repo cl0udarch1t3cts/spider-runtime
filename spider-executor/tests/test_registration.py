@@ -1,0 +1,161 @@
+import mongomock
+import pytest
+from pydantic import ValidationError
+
+from spider_executor.models import Entry, ExecutionJob
+from spider_executor.service import MongoControlService
+
+
+def test_registration_service_rejects_unsafe_or_unbounded_identity() -> None:
+    service = MongoControlService(
+        mongomock.MongoClient().spider,
+        release_provider=lambda: "b" * 40,
+    )
+
+    with pytest.raises(ValidationError):
+        service.register("../escape", "Example AG", "Bern")
+    with pytest.raises(ValidationError):
+        service.register("business-123", "x" * 257, "Bern")
+
+
+def test_register_upserts_entry_and_deduplicates_create_task() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+    service.ensure_indexes()
+
+    first = service.register("business-123", "Example AG", "Bern")
+    second = service.register("business-123", "Example AG Updated", "Zurich")
+
+    assert first["task_id"] == second["task_id"]
+    assert second == {
+        "entry_id": "business-123",
+        "task_id": first["task_id"],
+        "status": "queued",
+        "operation": "create",
+    }
+    entry = service.db.entries.find_one({"_id": "business-123"})
+    assert entry is not None
+    entry.pop("updated_at")
+    entry.pop("created_at")
+    assert entry == {
+        "_id": "business-123",
+        "entry_id": "business-123",
+        "businessname": "Example AG Updated",
+        "address": "Zurich",
+    }
+    tasks = list(service.db.doctor_tasks.find({"entry_id": "business-123", "type": "create"}))
+    assert len(tasks) == 1
+    assert tasks[0]["status"] == "queued"
+    assert tasks[0]["active_key"] == "business-123"
+    assert tasks[0]["base_release"] == "b" * 40
+    assert "slug" not in tasks[0]
+
+
+def test_execution_enqueue_fails_closed_for_non_active_prototype_entry() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider)
+    service.put_entry(
+        Entry(entry_id="business-1", businessname="First", address="Bern", scraper_release="a" * 40)
+    )
+    service.put_entry(
+        Entry(entry_id="business-2", businessname="Second", address="Zurich", scraper_release="b" * 40)
+    )
+    service.db.runtime_state.insert_one(
+        {"_id": "activated_entry", "entry_id": "business-1", "scraper_release": "a" * 40}
+    )
+
+    with pytest.raises(RuntimeError, match="only one activated entry"):
+        service.enqueue(ExecutionJob(entry_id="business-2", idempotency_key="manual:2"))
+
+
+def test_execution_enqueue_rejects_entry_before_release_activation() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+    service.register("business-123", "Example AG", "Bern")
+
+    with pytest.raises(RuntimeError, match="activated scraper release"):
+        service.enqueue(ExecutionJob(entry_id="business-123", idempotency_key="manual:1"))
+
+
+def test_execution_enqueue_requires_durable_activation_not_only_entry_release() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider)
+    service.put_entry(
+        Entry(
+            entry_id="business-123",
+            businessname="Example AG",
+            address="Bern",
+            scraper_release="a" * 40,
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="activated scraper release"):
+        service.enqueue(ExecutionJob(entry_id="business-123", idempotency_key="manual:1"))
+
+
+def test_registered_entry_is_available_to_executor_by_entry_id() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+
+    service.register("business-123", "Example AG", "Bern")
+
+    entry = service.get_entry("business-123")
+    assert entry is not None
+    assert entry.entry_id == "business-123"
+    assert entry.businessname == "Example AG"
+    assert entry.address == "Bern"
+    assert entry.website is None
+
+
+def test_repair_budget_persists_across_fresh_tasks_and_requires_human_review() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider)
+    service.put_entry(
+        Entry(
+            entry_id="example",
+            businessname="Example",
+            address="Bern",
+            scraper_release="a" * 40,
+        )
+    )
+
+    for sequence in (1, 2):
+        service.ensure_doctor_task(
+            "example",
+            f"run-{sequence}",
+            "SCRAPER_EXCEPTION",
+            ["selector missing"],
+        )
+        task = service.db.doctor_tasks.find_one({"active_key": "example"})
+        assert task["status"] == "queued"
+        assert task["repair_sequence"] == sequence
+        service.db.doctor_tasks.update_one(
+            {"_id": task["_id"]},
+            {"$set": {"status": "succeeded"}, "$unset": {"active_key": ""}},
+        )
+
+    service.ensure_doctor_task(
+        "example",
+        "run-3",
+        "SCRAPER_EXCEPTION",
+        ["still broken"],
+    )
+
+    review = service.db.doctor_tasks.find_one({"active_key": "example"})
+    assert review["status"] == "human_review_required"
+    assert review["source_run_id"] == "run-3"
+    assert service.db.entries.find_one({"_id": "example"})["repair_attempts"] == 2
+
+
+def test_create_task_blocks_simultaneous_repair_for_the_same_entry() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+    service.ensure_indexes()
+
+    registration = service.register("business-123", "Example AG", "Bern")
+    service.ensure_doctor_task(
+        "business-123",
+        "run-1",
+        "SCRAPER_EXCEPTION",
+        ["selector missing"],
+    )
+
+    tasks = list(service.db.doctor_tasks.find({"entry_id": "business-123"}))
+    assert len(tasks) == 1
+    assert tasks[0]["_id"] == registration["task_id"]
+    assert tasks[0]["type"] == "create"
+    assert tasks[0]["active_key"] == "business-123"
+    assert tasks[0]["source_run_id"] is None

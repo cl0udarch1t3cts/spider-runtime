@@ -3,15 +3,15 @@ from typing import Protocol
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from spider_executor.models import RunnerResult
+from spider_executor.models import EntryId, RunnerResult
 
 
 class Runner(Protocol):
-    def run(self, slug: str, run_id: str) -> RunnerResult: ...
+    def run(self, entry_id: str, run_id: str) -> RunnerResult: ...
 
 
 class RunRequest(BaseModel):
-    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,127}$")
+    entry_id: EntryId
     run_id: str = Field(pattern=r"^[A-Za-z0-9:._-]{1,255}$")
 
 
@@ -24,6 +24,6 @@ def create_runner_app(runner: Runner) -> FastAPI:
 
     @app.post("/run", response_model=RunnerResult)
     def run(request: RunRequest) -> RunnerResult:
-        return runner.run(request.slug, request.run_id)
+        return runner.run(request.entry_id, request.run_id)
 
     return app

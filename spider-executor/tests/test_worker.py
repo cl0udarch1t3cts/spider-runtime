@@ -13,12 +13,14 @@ from spider_executor.models import (
 from spider_executor.service import MongoControlService
 from spider_executor.worker import ExecutorWorker
 
+RELEASE = "a" * 40
+
 
 class FakeRunner:
     def __init__(self, result: RunnerResult) -> None:
         self.result = result
 
-    def run(self, slug: str, run_id: str) -> RunnerResult:
+    def run(self, entry_id: str, run_id: str) -> RunnerResult:
         return self.result
 
 
@@ -26,30 +28,44 @@ def successful_result() -> RunnerResult:
     return RunnerResult(
         exit_code=0,
         record=ScrapedRecord(
-            slug="example",
+            entry_id="example",
             website="https://example.com",
             fields={"NAME": {"value": "Example", "source": "https://example.com"}},
         ),
         output_artifact=Artifact(key="runs/x/output.json", size_bytes=1, sha256="0" * 64),
+        scraper_release=RELEASE,
     )
 
 
 def make_service():
     client = mongomock.MongoClient()
-    return MongoControlService(client.spider)
+    service = MongoControlService(client.spider)
+    service.db.runtime_state.insert_one(
+        {"_id": "activated_entry", "entry_id": "example", "scraper_release": RELEASE}
+    )
+    return service
+
+
+def activated_entry(**overrides) -> Entry:
+    data = {
+        "entry_id": "example",
+        "businessname": "Example",
+        "address": "Bern",
+        "scraper_release": RELEASE,
+    }
+    data.update(overrides)
+    return Entry(**data)
 
 
 def test_worker_persists_successful_run_and_record() -> None:
     service = make_service()
     service.put_entry(
-        Entry(
-            slug="example",
-            name="Example",
+        activated_entry(
             website="https://example.com",
             validation={"required_fields": ["NAME"], "minimum_non_null_fields": 1},
         )
     )
-    job = service.enqueue(ExecutionJob(slug="example", idempotency_key="one"))
+    job = service.enqueue(ExecutionJob(entry_id="example", idempotency_key="one"))
     worker = ExecutorWorker(service, FakeRunner(successful_result()), worker_id="worker-1")
 
     run = worker.process_one()
@@ -62,14 +78,69 @@ def test_worker_persists_successful_run_and_record() -> None:
     assert service.doctor_task_count() == 0
 
 
+def test_post_doctor_handoff_job_executes_registered_entry_without_website() -> None:
+    release = "a" * 40
+    service = MongoControlService(
+        mongomock.MongoClient().spider,
+        release_provider=lambda: "b" * 40,
+    )
+    registration = service.register("example", "Example", "Bern")
+    service.db.doctor_tasks.update_one(
+        {"_id": registration["task_id"]},
+        {"$set": {"status": "succeeded", "result": {"commit_sha": release}}},
+    )
+    service.consume_doctor_handoff(registration["task_id"])
+    result = successful_result()
+    result.scraper_release = release
+
+    run = ExecutorWorker(service, FakeRunner(result), worker_id="worker-1").process_one()
+
+    assert run is not None
+    assert run.status == JobStatus.SUCCEEDED
+    assert service.doctor_task_count() == 1
+
+
+def test_worker_rejects_job_for_non_active_prototype_entry_without_doctor_task() -> None:
+    service = make_service()
+    service.put_entry(
+        Entry(entry_id="other", businessname="Other", address="Zurich", scraper_release=RELEASE)
+    )
+    service.jobs.enqueue(
+        ExecutionJob(entry_id="other", idempotency_key="legacy-other", scraper_release=RELEASE)
+    )
+
+    run = ExecutorWorker(service, FakeRunner(successful_result()), worker_id="worker-1").process_one()
+
+    assert run is not None
+    assert run.status == JobStatus.FAILED
+    assert run.failure_class == FailureClass.INACTIVE_ENTRY
+    assert service.doctor_task_count() == 0
+
+
+def test_worker_rejects_queued_job_before_release_activation() -> None:
+    service = make_service()
+    service.put_entry(
+        Entry(entry_id="example", businessname="Example", address="Bern", website="https://example.com")
+    )
+    service.jobs.enqueue(ExecutionJob(entry_id="example", idempotency_key="legacy-bypass"))
+
+    run = ExecutorWorker(service, FakeRunner(successful_result()), worker_id="worker-1").process_one()
+
+    assert run is not None
+    assert run.status == JobStatus.FAILED
+    assert run.failure_class == FailureClass.INACTIVE_ENTRY
+    assert run.errors == ["entry 'example' has no activated scraper release"]
+    assert service.doctor_task_count() == 0
+
+
 def test_artifact_failure_is_recorded_without_doctor_task() -> None:
     class BrokenArtifacts:
         def put(self, key, content):
             raise OSError("disk full")
 
     service = make_service()
-    service.put_entry(Entry(slug="example", name="Example", website="https://example.com"))
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="artifact-failure"))
+    service.put_entry(activated_entry(website="https://example.com"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="artifact-failure"))
     worker = ExecutorWorker(
         service,
         FakeRunner(successful_result()),
@@ -87,8 +158,8 @@ def test_artifact_failure_is_recorded_without_doctor_task() -> None:
 
 def test_inactive_entry_does_not_run_or_create_doctor_task() -> None:
     service = make_service()
-    service.put_entry(Entry(slug="example", name="Example", website="https://example.com", active=False))
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="inactive"))
+    service.put_entry(activated_entry(website="https://example.com", active=False))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="inactive"))
 
     run = ExecutorWorker(service, FakeRunner(successful_result()), worker_id="worker-1").process_one()
 
@@ -97,12 +168,12 @@ def test_inactive_entry_does_not_run_or_create_doctor_task() -> None:
     assert service.doctor_task_count() == 0
 
 
-def test_wrong_record_slug_is_identity_failure() -> None:
+def test_wrong_record_entry_id_is_identity_failure() -> None:
     service = make_service()
-    service.put_entry(Entry(slug="example", name="Example", website="https://example.com"))
+    service.put_entry(activated_entry(website="https://example.com"))
     result = successful_result()
-    result.record.slug = "other"
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="wrong-slug"))
+    result.record.entry_id = "other"
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="wrong-entry_id"))
 
     run = ExecutorWorker(service, FakeRunner(result), worker_id="worker-1").process_one()
 
@@ -114,19 +185,25 @@ def test_wrong_record_slug_is_identity_failure() -> None:
 def test_runner_network_failure_is_not_misclassified_as_release_mismatch() -> None:
     service = make_service()
     service.put_entry(
-        Entry(
-            slug="example",
-            name="Example",
+        activated_entry(
             website="https://example.com",
             scraper_release="expected-sha",
         )
+    )
+    service.db.runtime_state.replace_one(
+        {"_id": "activated_entry"},
+        {
+            "_id": "activated_entry",
+            "entry_id": "example",
+            "scraper_release": "expected-sha",
+        },
     )
     result = successful_result()
     result.exit_code = 2
     result.scraper_release = None
     result.failure_class = FailureClass.NETWORK_TIMEOUT
     result.record.errors = ["isolated runner unavailable"]
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="runner-network"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="runner-network"))
 
     run = ExecutorWorker(service, FakeRunner(result), worker_id="worker-1").process_one()
 
@@ -137,31 +214,35 @@ def test_runner_network_failure_is_not_misclassified_as_release_mismatch() -> No
 def test_release_mismatch_fails_before_accepting_record() -> None:
     service = make_service()
     service.put_entry(
-        Entry(
-            slug="example",
-            name="Example",
+        activated_entry(
             website="https://example.com",
             scraper_release="expected-sha",
             validation={"required_fields": ["NAME"]},
         )
     )
+    service.db.runtime_state.replace_one(
+        {"_id": "activated_entry"},
+        {
+            "_id": "activated_entry",
+            "entry_id": "example",
+            "scraper_release": "expected-sha",
+        },
+    )
     result = successful_result()
     result.scraper_release = "wrong-sha"
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="release"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="release"))
 
     run = ExecutorWorker(service, FakeRunner(result), worker_id="worker-1").process_one()
 
     assert run.status == JobStatus.FAILED
-    assert run.failure_class.value == "IDENTITY_MISMATCH"
-    assert service.doctor_task_count() == 1
+    assert run.failure_class.value == "RELEASE_MISMATCH"
+    assert service.doctor_task_count() == 0
 
 
 def test_semantic_failure_creates_one_doctor_task() -> None:
     service = make_service()
     service.put_entry(
-        Entry(
-            slug="example",
-            name="Example",
+        activated_entry(
             website="https://example.com",
             validation={"required_fields": ["NAME"]},
         )
@@ -169,8 +250,8 @@ def test_semantic_failure_creates_one_doctor_task() -> None:
     bad = successful_result()
     bad.record.fields["NAME"].value = None
     bad.record.fields["NAME"].source = None
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="bad-1"))
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="bad-2"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="bad-1"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="bad-2"))
     worker = ExecutorWorker(service, FakeRunner(bad), worker_id="worker-1")
 
     first = worker.process_one()
@@ -191,9 +272,7 @@ def test_semantic_failure_creates_one_doctor_task() -> None:
 def test_new_failure_does_not_retarget_running_or_reviewable_doctor_task() -> None:
     service = make_service()
     service.put_entry(
-        Entry(
-            slug="example",
-            name="Example",
+        activated_entry(
             website="https://example.com",
             validation={"required_fields": ["NAME"]},
         )
@@ -201,14 +280,14 @@ def test_new_failure_does_not_retarget_running_or_reviewable_doctor_task() -> No
     bad = successful_result()
     bad.record.fields["NAME"].value = None
     bad.record.fields["NAME"].source = None
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="initial-failure"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="initial-failure"))
     worker = ExecutorWorker(service, FakeRunner(bad), worker_id="worker-1")
     initial = worker.process_one()
     service.db.doctor_tasks.update_one(
         {"active_key": "example"},
         {"$set": {"status": "awaiting_review"}},
     )
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="later-failure"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="later-failure"))
 
     worker.process_one()
 
@@ -220,9 +299,7 @@ def test_new_failure_does_not_retarget_running_or_reviewable_doctor_task() -> No
 def test_new_failure_does_not_retarget_queued_create_task() -> None:
     service = make_service()
     service.put_entry(
-        Entry(
-            slug="example",
-            name="Example",
+        activated_entry(
             website="https://example.com",
             validation={"required_fields": ["NAME"]},
         )
@@ -231,7 +308,7 @@ def test_new_failure_does_not_retarget_queued_create_task() -> None:
         {
             "_id": "create-task",
             "active_key": "example",
-            "slug": "example",
+            "entry_id": "example",
             "type": "create",
             "status": "queued",
             "source_run_id": None,
@@ -243,7 +320,7 @@ def test_new_failure_does_not_retarget_queued_create_task() -> None:
     bad = successful_result()
     bad.record.fields["NAME"].value = None
     bad.record.fields["NAME"].source = None
-    service.enqueue(ExecutionJob(slug="example", idempotency_key="repair-failure"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="repair-failure"))
 
     ExecutorWorker(service, FakeRunner(bad), worker_id="worker-1").process_one()
 

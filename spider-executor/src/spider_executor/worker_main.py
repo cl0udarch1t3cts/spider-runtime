@@ -34,7 +34,7 @@ def main() -> None:
     while True:
         run = worker.process_one()
         if run is not None:
-            logger.info("processed slug=%s run_id=%s status=%s", run.slug, run.id, run.status)
+            logger.info("processed entry_id=%s run_id=%s status=%s", run.entry_id, run.id, run.status)
         if args.once:
             return
         if run is None:

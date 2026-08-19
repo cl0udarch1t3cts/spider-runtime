@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -41,18 +43,57 @@ def _decode(model_type, document: dict | None, *, id_field: bool = False):
 
 
 class MongoControlService:
-    def __init__(self, db: Database) -> None:
+    def __init__(
+        self,
+        db: Database,
+        *,
+        release_provider: Callable[[], str] | None = None,
+        provisioner: Callable[[str], None] | None = None,
+    ) -> None:
         self.db = db
         self.jobs = MongoJobRepository(db.execution_jobs)
+        self.release_provider = release_provider
+        self.provisioner = provisioner
 
     def ensure_indexes(self) -> None:
         self.jobs.ensure_indexes()
-        self.db.execution_runs.create_index([("slug", ASCENDING), ("started_at", DESCENDING)])
+        self.db.execution_runs.create_index([("entry_id", ASCENDING), ("started_at", DESCENDING)])
         self.db.records.create_index("run_id", unique=True)
         self.db.artifacts.create_index("run_id", unique=True)
+        legacy_tasks = list(
+            self.db.doctor_tasks.find(
+                {"active_key": {"$exists": True}, "entry_id": {"$exists": True}, "type": {"$in": ["create", "repair"]}},
+                {"_id": 1, "entry_id": 1, "type": 1, "active_key": 1},
+            )
+        )
+        tasks_by_entry: dict[str, list[dict]] = {}
+        for task in legacy_tasks:
+            tasks_by_entry.setdefault(task["entry_id"], []).append(task)
+        for entry_id, tasks in tasks_by_entry.items():
+            tasks.sort(key=lambda task: (task.get("type") != "create", str(task["_id"])))
+            winner, *conflicts = tasks
+            self.db.doctor_tasks.update_one(
+                {"_id": winner["_id"]},
+                {"$set": {"active_key": entry_id}},
+            )
+            for conflict in conflicts:
+                self.db.doctor_tasks.update_one(
+                    {"_id": conflict["_id"]},
+                    {
+                        "$set": {
+                            "status": "human_review_required",
+                            "migration_error": "conflicting legacy active Doctor task",
+                        },
+                        "$unset": {"active_key": ""},
+                    },
+                )
+        if "active_repair_per_slug" in self.db.doctor_tasks.index_information():
+            self.db.doctor_tasks.drop_index("active_repair_per_slug")
+        if "active_doctor_task_per_entry_operation" in self.db.doctor_tasks.index_information():
+            self.db.doctor_tasks.drop_index("active_doctor_task_per_entry_operation")
         self.db.doctor_tasks.create_index(
             "active_key",
-            name="active_repair_per_slug",
+            name="active_doctor_task_per_entry",
             unique=True,
             sparse=True,
         )
@@ -64,8 +105,183 @@ class MongoControlService:
         except PyMongoError:
             return False
 
+    def register(self, entry_id: str, businessname: str, address: str) -> dict:
+        registration = Entry(entry_id=entry_id, businessname=businessname, address=address)
+        entry_id = registration.entry_id
+        businessname = registration.businessname
+        address = registration.address
+        if self.release_provider is None:
+            raise RuntimeError("registration requires a spider-scripts release provider")
+        base_release = self.release_provider().strip().lower()
+        if re.fullmatch(r"[0-9a-f]{40}", base_release) is None:
+            raise RuntimeError("release provider did not return a full Git commit SHA")
+        now = datetime.now(UTC)
+        active_key = entry_id
+        with self._transaction() as session:
+            kwargs = self._session_kwargs(session)
+            self.db.entries.update_one(
+                {"_id": entry_id},
+                {
+                    "$set": {
+                        "entry_id": entry_id,
+                        "businessname": businessname,
+                        "address": address,
+                        "updated_at": now,
+                    },
+                    "$setOnInsert": {"created_at": now},
+                },
+                upsert=True,
+                **kwargs,
+            )
+            self.db.doctor_tasks.update_one(
+                {"active_key": active_key},
+                {
+                    "$setOnInsert": {
+                        "_id": str(uuid4()),
+                        "active_key": active_key,
+                        "entry_id": entry_id,
+                        "type": "create",
+                        "base_release": base_release,
+                        "status": "queued",
+                        "priority": 50,
+                        "attempts": 0,
+                        "max_attempts": 2,
+                        "available_at": now,
+                        "lease": None,
+                        "created_at": now,
+                        "updated_at": now,
+                        "source_run_id": None,
+                        "failure_class": None,
+                        "errors": [],
+                    }
+                },
+                upsert=True,
+                **kwargs,
+            )
+            task = self.db.doctor_tasks.find_one({"active_key": active_key}, **kwargs)
+            if task is None:  # Defensive: the upsert and read share one transaction.
+                raise RuntimeError("registered Doctor task could not be loaded")
+        return {
+            "entry_id": entry_id,
+            "task_id": str(task["_id"]),
+            "status": task["status"],
+            "operation": task["type"],
+        }
+
+    def consume_doctor_handoff(self, task_id: str) -> ExecutionJob | None:
+        task = self.db.doctor_tasks.find_one({"_id": task_id, "status": "succeeded"})
+        if task is None:
+            return None
+        if task.get("handoff_job_id"):
+            return self.get_job(str(task["handoff_job_id"]))
+        commit_sha = (task.get("result") or {}).get("commit_sha")
+        if not isinstance(commit_sha, str) or re.fullmatch(r"[0-9a-fA-F]{40}", commit_sha) is None:
+            return None
+        commit_sha = commit_sha.lower()
+        entry_id = task["entry_id"]
+        activation = self.db.runtime_state.find_one({"_id": "activated_entry"})
+        if activation is not None and activation.get("entry_id") != entry_id:
+            raise RuntimeError("prototype supports only one activated entry")
+
+        # Provisioning may fetch and fast-forward Git, so it must never run in a
+        # MongoDB transaction. The provisioner is idempotent at an exact SHA.
+        if self.provisioner is not None:
+            self.provisioner(commit_sha)
+
+        with self._transaction() as session:
+            kwargs = self._session_kwargs(session)
+            task = self.db.doctor_tasks.find_one(
+                {"_id": task_id, "status": "succeeded"},
+                **kwargs,
+            )
+            if task is None:
+                return None
+            if task.get("handoff_job_id"):
+                return self.get_job(str(task["handoff_job_id"]))
+            persisted_sha = (task.get("result") or {}).get("commit_sha")
+            if not isinstance(persisted_sha, str) or persisted_sha.lower() != commit_sha:
+                return None
+            activation = self.db.runtime_state.find_one({"_id": "activated_entry"}, **kwargs)
+            if activation is not None and activation.get("entry_id") != entry_id:
+                raise RuntimeError("prototype supports only one activated entry")
+            if self.db.entries.update_one(
+                {"_id": entry_id},
+                {"$set": {"scraper_release": commit_sha, "updated_at": datetime.now(UTC)}},
+                **kwargs,
+            ).matched_count != 1:
+                return None
+            self.db.runtime_state.replace_one(
+                {"_id": "activated_entry"},
+                {"_id": "activated_entry", "entry_id": entry_id, "scraper_release": commit_sha},
+                upsert=True,
+                **kwargs,
+            )
+            job = ExecutionJob(
+                entry_id=entry_id,
+                idempotency_key=f"doctor-handoff:{task_id}:{commit_sha}",
+                trigger="doctor_handoff",
+                scraper_release=commit_sha,
+            )
+            self.db.execution_jobs.update_one(
+                {"idempotency_key": job.idempotency_key},
+                {"$setOnInsert": _encode(job)},
+                upsert=True,
+                **kwargs,
+            )
+            job_document = self.db.execution_jobs.find_one(
+                {"idempotency_key": job.idempotency_key},
+                **kwargs,
+            )
+            if job_document is None:
+                raise RuntimeError("Doctor handoff job could not be loaded")
+            handed_off_job = _decode(ExecutionJob, job_document, id_field=True)
+            if handed_off_job is None:
+                raise RuntimeError("Doctor handoff job could not be decoded")
+            self.db.doctor_tasks.update_one(
+                {"_id": task_id, "status": "succeeded"},
+                {
+                    "$set": {
+                        "handoff_job_id": handed_off_job.id,
+                        "handed_off_at": datetime.now(UTC),
+                    },
+                    "$unset": {"active_key": ""},
+                },
+                **kwargs,
+            )
+        return handed_off_job
+
+    def consume_next_doctor_handoff(self) -> ExecutionJob | None:
+        task = self.db.doctor_tasks.find_one(
+            {"status": "succeeded", "handed_off_at": {"$exists": False}},
+            sort=[("completed_at", ASCENDING), ("created_at", ASCENDING)],
+        )
+        if task is None:
+            return None
+        return self.consume_doctor_handoff(str(task["_id"]))
+
     def enqueue(self, job: ExecutionJob) -> ExecutionJob:
+        entry = self.get_entry(job.entry_id)
+        if entry is None or not entry.scraper_release:
+            raise RuntimeError(f"entry {job.entry_id!r} has no activated scraper release")
+        activation = self.db.runtime_state.find_one({"_id": "activated_entry"})
+        if activation is None:
+            raise RuntimeError(f"entry {job.entry_id!r} has no activated scraper release")
+        if activation.get("entry_id") != job.entry_id:
+            raise RuntimeError("prototype supports only one activated entry")
+        if activation.get("scraper_release") != entry.scraper_release:
+            raise RuntimeError(f"entry {job.entry_id!r} has no activated scraper release")
+        job.scraper_release = entry.scraper_release
         return self.jobs.enqueue(job)
+
+    def is_entry_release_activated(self, entry_id: str, release: str | None) -> bool:
+        entry = self.get_entry(entry_id)
+        if entry is None or not entry.scraper_release or release != entry.scraper_release:
+            return False
+        activation = self.db.runtime_state.find_one({"_id": "activated_entry"})
+        return activation is not None and (
+            activation.get("entry_id") == entry_id
+            and activation.get("scraper_release") == release
+        )
 
     def claim(self, worker_id: str) -> ExecutionJob | None:
         return self.jobs.claim(worker_id)
@@ -78,28 +294,28 @@ class MongoControlService:
 
     def put_entry(self, entry: Entry) -> Entry:
         now = datetime.now(UTC)
-        document = _encode(entry, identifier=entry.slug)
+        document = _encode(entry, identifier=entry.entry_id)
         document.pop("_id")
         document["updated_at"] = now
         document.pop("created_at", None)
         self.db.entries.update_one(
-            {"_id": entry.slug},
+            {"_id": entry.entry_id},
             {"$set": document, "$setOnInsert": {"created_at": entry.created_at}},
             upsert=True,
         )
-        return self.get_entry(entry.slug)
+        return self.get_entry(entry.entry_id)
 
-    def get_entry(self, slug: str) -> Entry | None:
-        return _decode(Entry, self.db.entries.find_one({"_id": slug}))
+    def get_entry(self, entry_id: str) -> Entry | None:
+        return _decode(Entry, self.db.entries.find_one({"_id": entry_id}))
 
     def save_run(self, run: ExecutionRun) -> ExecutionRun:
         self.db.execution_runs.replace_one({"_id": run.id}, _encode(run), upsert=True)
         return run
 
-    def list_runs(self, slug: str) -> list[ExecutionRun]:
+    def list_runs(self, entry_id: str) -> list[ExecutionRun]:
         return [
             _decode(ExecutionRun, document, id_field=True)
-            for document in self.db.execution_runs.find({"slug": slug}).sort("started_at", DESCENDING)
+            for document in self.db.execution_runs.find({"entry_id": entry_id}).sort("started_at", DESCENDING)
         ]
 
     def save_record(self, run_id: str, record: ScrapedRecord) -> str:
@@ -119,7 +335,7 @@ class MongoControlService:
 
     def _upsert_doctor_task(
         self,
-        slug: str,
+        entry_id: str,
         run_id: str,
         failure_class: str,
         errors: list[str],
@@ -127,6 +343,7 @@ class MongoControlService:
         session=None,
     ) -> None:
         now = datetime.now(UTC)
+        active_key = entry_id
         kwargs = self._session_kwargs(session)
         latest = {
             "source_run_id": run_id,
@@ -134,22 +351,31 @@ class MongoControlService:
             "errors": errors,
             "updated_at": now,
         }
-        queued = self.db.doctor_tasks.update_one(
-            {"active_key": slug, "status": "queued", "type": "repair"},
-            {"$set": latest},
-            **kwargs,
-        )
-        if queued.matched_count:
+        active = self.db.doctor_tasks.find_one({"active_key": active_key}, **kwargs)
+        if active is not None:
+            if active.get("type") == "repair" and active.get("status") == "queued":
+                self.db.doctor_tasks.update_one({"_id": active["_id"]}, {"$set": latest}, **kwargs)
             return
+
+        entry = self.db.entries.find_one({"_id": entry_id}, {"repair_attempts": 1}, **kwargs)
+        repair_attempts = int((entry or {}).get("repair_attempts", 0))
+        review_required = repair_attempts >= 2
+        if not review_required:
+            self.db.entries.update_one(
+                {"_id": entry_id},
+                {"$inc": {"repair_attempts": 1}, "$set": {"updated_at": now}},
+                **kwargs,
+            )
         self.db.doctor_tasks.update_one(
-            {"active_key": slug},
+            {"active_key": active_key},
             {
                 "$setOnInsert": {
                     "_id": str(uuid4()),
-                    "active_key": slug,
-                    "slug": slug,
+                    "active_key": active_key,
+                    "entry_id": entry_id,
                     "type": "repair",
-                    "status": "queued",
+                    "status": "human_review_required" if review_required else "queued",
+                    "repair_sequence": repair_attempts + 1,
                     "priority": 50,
                     "attempts": 0,
                     "max_attempts": 2,
@@ -163,8 +389,9 @@ class MongoControlService:
             **kwargs,
         )
 
-    def ensure_doctor_task(self, slug: str, run_id: str, failure_class: str, errors: list[str]) -> None:
-        self._upsert_doctor_task(slug, run_id, failure_class, errors)
+    def ensure_doctor_task(self, entry_id: str, run_id: str, failure_class: str, errors: list[str]) -> None:
+        with self._transaction() as session:
+            self._upsert_doctor_task(entry_id, run_id, failure_class, errors, session=session)
 
     def doctor_task_count(self) -> int:
         return self.db.doctor_tasks.count_documents({})
@@ -257,7 +484,7 @@ class MongoControlService:
             self.db.execution_runs.replace_one({"_id": run.id}, _encode(run), upsert=True, **kwargs)
             if failure.doctor_eligible:
                 self._upsert_doctor_task(
-                    run.slug,
+                    run.entry_id,
                     run.id,
                     str(failure),
                     errors,
