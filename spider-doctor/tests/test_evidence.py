@@ -53,6 +53,7 @@ def test_create_task_uses_base_release_and_authoritative_entry() -> None:
             "entry_id": "New.Place_1",
             "type": "create",
             "base_release": "c" * 40,
+            "failure_class": None,
         }
     )
 

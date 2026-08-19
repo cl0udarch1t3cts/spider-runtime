@@ -39,7 +39,7 @@ class DoctorTask(BaseModel):
     max_attempts: int = 2
     available_at: datetime = Field(default_factory=utcnow)
     source_run_id: str | None = None
-    failure_class: str = "NEW_SCRAPER"
+    failure_class: str | None = None
     errors: list[str] = Field(default_factory=list)
     base_release: str | None = None
     candidate_sha: str | None = None
