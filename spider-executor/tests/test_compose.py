@@ -14,6 +14,9 @@ def test_runtime_volumes_are_initialized_for_the_runtime_user() -> None:
     assert "    network_mode: none\n" in compose
     assert "      - artifacts:/srv/spider/artifacts\n" in compose
     assert "      - runtime-lock:/srv/spider/locks\n" in compose
+    assert compose.index("chmod 0770 /srv/spider/artifacts /srv/spider/locks") < compose.index(
+        "chown -R spider:spider /srv/spider/artifacts /srv/spider/locks"
+    )
     assert compose.count("runtime-init:\n        condition: service_completed_successfully") == 2
 
 
