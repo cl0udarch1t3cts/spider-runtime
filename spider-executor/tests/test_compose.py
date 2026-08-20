@@ -36,3 +36,4 @@ def test_runtime_image_has_host_mapped_spider_identity() -> None:
     assert "ARG SPIDER_EXECUTOR_UID" in dockerfile
     assert "ARG SPIDER_EXECUTOR_GID" in dockerfile
     assert 'useradd --uid "$SPIDER_EXECUTOR_UID"' in dockerfile
+    assert "git openssh-client" in dockerfile

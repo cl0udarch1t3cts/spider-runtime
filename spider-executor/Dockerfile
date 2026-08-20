@@ -12,7 +12,7 @@ RUN case "$SPIDER_EXECUTOR_UID:$SPIDER_EXECUTOR_GID" in \
     && [ "$SPIDER_EXECUTOR_UID" -le 65534 ] \
     && [ "$SPIDER_EXECUTOR_GID" -ge 1 ] \
     && [ "$SPIDER_EXECUTOR_GID" -le 65534 ] \
-    && apt-get update && apt-get install -y --no-install-recommends git \
+    && apt-get update && apt-get install -y --no-install-recommends git openssh-client \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid "$SPIDER_EXECUTOR_GID" spider \
     && useradd --uid "$SPIDER_EXECUTOR_UID" --gid "$SPIDER_EXECUTOR_GID" \
