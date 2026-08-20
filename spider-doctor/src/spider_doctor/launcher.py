@@ -176,7 +176,7 @@ class DockerHermesLauncher:
             f"--env=no_proxy={self.config.no_proxy}",
             f"--env=HERMES_UID={os.getuid()}",
             f"--env=HERMES_GID={os.getgid()}",
-            "--tmpfs=/run:rw,nosuid,nodev,size=64m",
+            "--tmpfs=/run:rw,exec,nosuid,nodev,size=64m",
             "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=256m",
             f"--volume={mounted_home}:/opt/data:rw",
             f"--volume={workspace.resolve()}:/workspace:rw",
