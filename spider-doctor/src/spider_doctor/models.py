@@ -50,7 +50,10 @@ class DoctorTask(BaseModel):
 
 
 class DoctorResult(BaseModel):
-    status: DoctorStatus
+    # Agent-authored results can request review or report failure. Only trusted
+    # host code may transition the durable task to succeeded after validation,
+    # candidate persistence, and publication.
+    status: Literal[DoctorStatus.AWAITING_REVIEW, DoctorStatus.FAILED]
     summary: str
     changed_files: list[str] = Field(default_factory=list)
     tests: list[str] = Field(default_factory=list)

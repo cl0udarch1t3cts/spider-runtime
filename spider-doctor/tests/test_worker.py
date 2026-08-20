@@ -170,3 +170,12 @@ def test_structured_agent_failure_uses_bounded_retry_path(tmp_path: Path) -> Non
     assert result.status == DoctorStatus.FAILED
     assert repository.candidate is None
     assert repository.failed[0:2] == ("task-1", "token")
+
+
+def test_agent_result_schema_exposes_only_untrusted_terminal_statuses() -> None:
+    schema = DoctorResult.model_json_schema()
+    status_schema = schema["properties"]["status"]
+    if "$ref" in status_schema:
+        status_schema = schema["$defs"][status_schema["$ref"].rsplit("/", 1)[-1]]
+
+    assert set(status_schema["enum"]) == {"awaiting_review", "failed"}
