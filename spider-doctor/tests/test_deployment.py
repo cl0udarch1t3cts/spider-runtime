@@ -47,6 +47,8 @@ def test_task_network_is_internal_and_egress_requires_proxy() -> None:
     assert "http_access deny !allowed_protocol" in squid
     assert "acl blocked_v4 dst 169.254.0.0/16" in squid
     assert "acl blocked_v6 dst fc00::/7" in squid
+    assert "acl blocked_names dstdomain localhost .local .internal" in squid
+    assert ".localhost" not in squid
 
 
 def test_dispatcher_mounts_only_required_daemon_paths_at_identical_host_paths() -> None:
