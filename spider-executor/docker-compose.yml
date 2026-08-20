@@ -78,7 +78,7 @@ services:
       args:
         SPIDER_EXECUTOR_UID: ${SPIDER_EXECUTOR_UID:-1000}
         SPIDER_EXECUTOR_GID: ${SPIDER_EXECUTOR_GID:-1000}
-    command: ["spider-executor-worker"]
+    command: ["python", "-m", "spider_executor.worker_main"]
     restart: unless-stopped
     depends_on:
       mongo-init:

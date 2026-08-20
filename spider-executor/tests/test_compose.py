@@ -37,3 +37,6 @@ def test_runtime_image_has_host_mapped_spider_identity() -> None:
     assert "ARG SPIDER_EXECUTOR_GID" in dockerfile
     assert 'useradd --uid "$SPIDER_EXECUTOR_UID"' in dockerfile
     assert "git openssh-client" in dockerfile
+    assert "PYTHONPATH=/app/src" in dockerfile
+    assert dockerfile.count("RUN uv sync") == 1
+    assert 'command: ["python", "-m", "spider_executor.worker_main"]' in compose
