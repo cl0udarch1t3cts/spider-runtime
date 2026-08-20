@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +38,37 @@ def test_runner_executes_core_run_and_stores_output(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert result.record.entry_id == "example"
     assert store.get(result.output_artifact.key) == json.dumps(result.record.model_dump(mode="json"), indent=2).encode()
+
+
+def test_runner_preserves_pythonpath_for_source_based_image(
+    tmp_path: Path, monkeypatch
+) -> None:
+    scripts = tmp_path / "spider-scripts"
+    (scripts / "core").mkdir(parents=True)
+    (scripts / "core" / "__init__.py").write_text("")
+    (scripts / "core" / "run.py").write_text(
+        "import json; print(json.dumps({'entry_id':'example','fields':{},'errors':[]}))"
+    )
+    init_git(scripts)
+    captured_env = None
+    real_popen = subprocess.Popen
+
+    def recording_popen(*args, **kwargs):
+        nonlocal captured_env
+        if kwargs.get("env") is not None:
+            captured_env = kwargs["env"]
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setenv("PYTHONPATH", "/app/src")
+    monkeypatch.setattr(subprocess, "Popen", recording_popen)
+
+    result = SpiderRunner(
+        scripts, LocalArtifactStore(tmp_path / "artifacts"), python_executable=sys.executable
+    ).run("example", "run-1")
+
+    assert result.exit_code == 0
+    assert captured_env is not None
+    assert captured_env["PYTHONPATH"] == os.environ["PYTHONPATH"]
 
 
 def test_runner_converts_timeout_to_structured_failure(tmp_path: Path) -> None:

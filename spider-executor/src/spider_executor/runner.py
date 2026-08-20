@@ -120,6 +120,7 @@ class SpiderRunner:
                         stderr=stderr_handle,
                         env={
                             "PATH": os.environ.get("PATH", ""),
+                            "PYTHONPATH": os.environ.get("PYTHONPATH", ""),
                             "LANG": "C.UTF-8",
                             "PYTHONDONTWRITEBYTECODE": "1",
                         },
