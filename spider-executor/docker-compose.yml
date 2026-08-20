@@ -88,14 +88,17 @@ services:
       runner:
         condition: service_healthy
     environment:
+      HOME: /app
       SPIDER_MONGODB_URI: mongodb://mongo:27017/spider?replicaSet=rs0&directConnection=true
       SPIDER_ARTIFACT_ROOT: /srv/spider/artifacts
       SPIDER_SCRIPTS_ROOT: /srv/spider/repositories/spider-scripts
+      SPIDER_SCRIPTS_REMOTE_URL: git@github.com:cl0udarch1t3cts/spider-scripts.git
       SPIDER_WORKER_ID: executor-1
       SPIDER_RUNNER_URL: http://runner:8001
     volumes:
       - artifacts:/srv/spider/artifacts
       - ${SPIDER_SCRIPTS_HOST_PATH:-../spider-scripts}:/srv/spider/repositories/spider-scripts:rw
+      - ${SPIDER_EXECUTOR_SSH_HOST_PATH:-/home/spider/.ssh}:/app/.ssh:ro
       - runtime-lock:/srv/spider/locks
     networks: [control, runner]
 

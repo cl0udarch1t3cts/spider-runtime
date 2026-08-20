@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from spider_executor.settings import Settings
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -25,6 +27,12 @@ def test_runtime_image_has_host_mapped_spider_identity() -> None:
 
     assert compose.count("SPIDER_EXECUTOR_UID: ${SPIDER_EXECUTOR_UID:-1000}") == 4
     assert compose.count("SPIDER_EXECUTOR_GID: ${SPIDER_EXECUTOR_GID:-1000}") == 4
+    assert "SPIDER_SCRIPTS_REMOTE_URL: git@github.com:cl0udarch1t3cts/spider-scripts.git" in compose
+    assert (
+        "${SPIDER_EXECUTOR_SSH_HOST_PATH:-/home/spider/.ssh}:/app/.ssh:ro" in compose
+    )
+    assert compose.count(":/app/.ssh:ro") == 1
+    assert Settings().scripts_remote_url == "git@github.com:cl0udarch1t3cts/spider-scripts.git"
     assert "ARG SPIDER_EXECUTOR_UID" in dockerfile
     assert "ARG SPIDER_EXECUTOR_GID" in dockerfile
     assert 'useradd --uid "$SPIDER_EXECUTOR_UID"' in dockerfile
