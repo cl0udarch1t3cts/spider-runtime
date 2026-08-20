@@ -31,3 +31,10 @@ printf '%-52s %14d %10d\n' LIMIT "$((512 * 1024 * 1024))" 20000
 
 printf '\nLargest task-home children:\n'
 du -sb -- "data/tasks/$TASK_ID/hermes-home"/* 2>/dev/null | sort -nr | head -20 || true
+
+printf '\nLargest task-home/home children (including hidden):\n'
+du -sb -- \
+  "data/tasks/$TASK_ID/hermes-home/home"/* \
+  "data/tasks/$TASK_ID/hermes-home/home"/.[!.]* \
+  "data/tasks/$TASK_ID/hermes-home/home"/..?* \
+  2>/dev/null | sort -nr | head -20 || true
