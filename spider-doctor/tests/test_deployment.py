@@ -104,6 +104,8 @@ def test_setup_script_uses_separate_trusted_and_credential_free_homes() -> None:
 
     assert "os.getuid()" in init_env
     assert 'Path("/var/run/docker.sock").stat().st_gid' in init_env
+    assert "rm -f data/hermes/config.yaml data/hermes/config.yaml.bak-*" in script
+    assert script.index("rm -f data/hermes/config.yaml") < script.index("run_task_hermes config set")
     assert 'data/broker-hermes:/opt/data' in script
     assert 'data/hermes:/opt/data' in script
     assert "auth add openai-codex" in script

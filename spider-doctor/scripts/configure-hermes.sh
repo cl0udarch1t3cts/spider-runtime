@@ -30,6 +30,10 @@ if [[ ! -f data/proxy-token ]]; then
 fi
 chmod 0600 data/proxy-token
 
+# This credential-free home is deployment-generated, not user-authored. Re-seed
+# its config from the pinned stock image so an old schema cannot block boot.
+rm -f data/hermes/config.yaml data/hermes/config.yaml.bak-*
+
 common=(
   --rm
   -e "HERMES_UID=${SPIDER_DOCTOR_UID}"
