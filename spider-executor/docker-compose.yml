@@ -30,7 +30,11 @@ services:
         '
 
   api:
-    build: .
+    build:
+      context: .
+      args:
+        SPIDER_EXECUTOR_UID: ${SPIDER_EXECUTOR_UID:-1000}
+        SPIDER_EXECUTOR_GID: ${SPIDER_EXECUTOR_GID:-1000}
     restart: unless-stopped
     depends_on:
       mongo-init:
@@ -44,12 +48,43 @@ services:
       - "127.0.0.1:8000:8000"
     networks: [control, edge]
 
+  runtime-init:
+    build:
+      context: .
+      args:
+        SPIDER_EXECUTOR_UID: ${SPIDER_EXECUTOR_UID:-1000}
+        SPIDER_EXECUTOR_GID: ${SPIDER_EXECUTOR_GID:-1000}
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ceu"]
+    command:
+      - |
+        chown -R spider:spider /srv/spider/artifacts /srv/spider/locks
+        chmod 0770 /srv/spider/artifacts /srv/spider/locks
+    volumes:
+      - artifacts:/srv/spider/artifacts
+      - runtime-lock:/srv/spider/locks
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 16
+    mem_limit: 64m
+
   worker:
-    build: .
+    build:
+      context: .
+      args:
+        SPIDER_EXECUTOR_UID: ${SPIDER_EXECUTOR_UID:-1000}
+        SPIDER_EXECUTOR_GID: ${SPIDER_EXECUTOR_GID:-1000}
     command: ["spider-executor-worker"]
     restart: unless-stopped
     depends_on:
       mongo-init:
+        condition: service_completed_successfully
+      runtime-init:
         condition: service_completed_successfully
       runner:
         condition: service_healthy
@@ -66,9 +101,16 @@ services:
     networks: [control, runner]
 
   runner:
-    build: .
+    build:
+      context: .
+      args:
+        SPIDER_EXECUTOR_UID: ${SPIDER_EXECUTOR_UID:-1000}
+        SPIDER_EXECUTOR_GID: ${SPIDER_EXECUTOR_GID:-1000}
     command: ["uvicorn", "spider_executor.runner_main:app", "--host", "0.0.0.0", "--port", "8001"]
     restart: unless-stopped
+    depends_on:
+      runtime-init:
+        condition: service_completed_successfully
     environment:
       SPIDER_SCRIPTS_ROOT: /srv/spider/repositories/spider-scripts
       SPIDER_RUNNER_TIMEOUT_SECONDS: 90

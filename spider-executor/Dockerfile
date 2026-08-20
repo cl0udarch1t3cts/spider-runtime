@@ -1,11 +1,22 @@
 FROM python:3.13-slim
 
+ARG SPIDER_EXECUTOR_UID=1000
+ARG SPIDER_EXECUTOR_GID=1000
+
 ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PATH="/app/.venv/bin:$PATH"
 
-RUN apt-get update && apt-get install -y --no-install-recommends git \
+RUN case "$SPIDER_EXECUTOR_UID:$SPIDER_EXECUTOR_GID" in \
+        *[!0-9:]*|:*|*:|*:*:*) echo "invalid Executor UID/GID" >&2; exit 1 ;; \
+    esac \
+    && [ "$SPIDER_EXECUTOR_UID" -ge 1 ] \
+    && [ "$SPIDER_EXECUTOR_UID" -le 65534 ] \
+    && [ "$SPIDER_EXECUTOR_GID" -ge 1 ] \
+    && [ "$SPIDER_EXECUTOR_GID" -le 65534 ] \
+    && apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system spider \
-    && useradd --system --gid spider --home /app spider
+    && groupadd --gid "$SPIDER_EXECUTOR_GID" spider \
+    && useradd --uid "$SPIDER_EXECUTOR_UID" --gid "$SPIDER_EXECUTOR_GID" \
+        --home-dir /app --no-create-home --shell /usr/sbin/nologin spider
 WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
