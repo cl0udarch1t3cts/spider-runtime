@@ -20,6 +20,14 @@ def test_compose_keeps_hermes_in_digest_pinned_containers() -> None:
     ]
     assert services["broker"]["user"] == "${SPIDER_DOCTOR_UID}:${SPIDER_DOCTOR_GID}"
     assert services["doctor"]["build"]["context"] == "."
+    assert services["doctor"]["build"]["args"] == {
+        "SPIDER_DOCTOR_UID": "${SPIDER_DOCTOR_UID}",
+        "SPIDER_DOCTOR_GID": "${SPIDER_DOCTOR_GID}",
+    }
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    assert "ARG SPIDER_DOCTOR_UID" in dockerfile
+    assert "ARG SPIDER_DOCTOR_GID" in dockerfile
+    assert 'useradd --uid "$SPIDER_DOCTOR_UID"' in dockerfile
     assert services["doctor"]["environment"]["SPIDER_DOCTOR_HERMES_IMAGE"] == (
         "nousresearch/hermes-agent@${SPIDER_DOCTOR_HERMES_DIGEST}"
     )

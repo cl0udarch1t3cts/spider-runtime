@@ -66,6 +66,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        SPIDER_DOCTOR_UID: ${SPIDER_DOCTOR_UID}
+        SPIDER_DOCTOR_GID: ${SPIDER_DOCTOR_GID}
     restart: unless-stopped
     init: true
     user: ${SPIDER_DOCTOR_UID}:${SPIDER_DOCTOR_GID}
