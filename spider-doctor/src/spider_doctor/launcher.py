@@ -183,8 +183,14 @@ class DockerHermesLauncher:
             f"--env=no_proxy={self.config.no_proxy}",
             f"--env=HERMES_UID={os.getuid()}",
             f"--env=HERMES_GID={os.getgid()}",
+            # Task homes are disposable and storage-accounted. Keep package and
+            # generic caches on a bounded tmpfs so uv/pip extraction cannot
+            # consume the persistent task-home file budget before useful work.
+            "--env=UV_CACHE_DIR=/tmp/uv-cache",
+            "--env=PIP_CACHE_DIR=/tmp/pip-cache",
+            "--env=XDG_CACHE_HOME=/tmp/cache",
             "--tmpfs=/run:rw,noexec,nosuid,nodev,size=64m",
-            "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=256m",
+            "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=512m",
             f"--volume={mounted_home}:/opt/data:rw",
             f"--volume={workspace.resolve()}:/workspace:rw",
             f"--volume={(workspace / '.git').resolve()}:/workspace/.git:ro",

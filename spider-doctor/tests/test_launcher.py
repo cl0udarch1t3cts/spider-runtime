@@ -54,7 +54,9 @@ def test_command_has_fail_closed_container_boundaries(tmp_path: Path) -> None:
     # starting the writable s6 supervision tree and keeps /run non-executable.
     assert "--read-only" not in command
     assert "--tmpfs=/run:rw,noexec,nosuid,nodev,size=64m" in command
+    assert "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=512m" in command
     assert not any(value.startswith("--tmpfs=/run:") and ",exec," in value for value in command)
+    assert not any(value.startswith("--tmpfs=/tmp:") and ",exec," in value for value in command)
     assert "--cap-drop=ALL" in command
     assert "--cap-add=CHOWN" in command
     assert "--cap-add=SETUID" in command
@@ -86,6 +88,9 @@ def test_command_has_fail_closed_container_boundaries(tmp_path: Path) -> None:
     assert "--env=no_proxy=spider-doctor-broker,localhost,127.0.0.1" in command
     assert f"--env=HERMES_UID={os.getuid()}" in command
     assert f"--env=HERMES_GID={os.getgid()}" in command
+    assert "--env=UV_CACHE_DIR=/tmp/uv-cache" in command
+    assert "--env=PIP_CACHE_DIR=/tmp/pip-cache" in command
+    assert "--env=XDG_CACHE_HOME=/tmp/cache" in command
     assert ":/workspace:rw" in joined
     assert ":/workspace/.git:ro" in joined
     assert ":/task/task.json:ro" in joined
