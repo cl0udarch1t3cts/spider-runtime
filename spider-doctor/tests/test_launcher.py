@@ -48,15 +48,13 @@ def test_command_has_fail_closed_container_boundaries(tmp_path: Path) -> None:
     )
     joined = " ".join(command)
 
-    assert command[:3] == ["docker", "run", "--rm"]
-    # The unmodified stock image remaps its hermes UID/GID at bootstrap and
-    # therefore needs its ephemeral root layer writable; only scoped bind
-    # mounts persist after --rm.
+    assert command[:4] == ["docker", "run", "--rm", "--init"]
+    # The official image detects Docker's injected PID-1 init and uses its
+    # supported direct-bootstrap path for this one-shot command. That avoids
+    # starting the writable s6 supervision tree and keeps /run non-executable.
     assert "--read-only" not in command
-    # The official s6-overlay entrypoint copies and executes its stage-1 init
-    # from /run, so this tmpfs must explicitly override Docker's noexec default.
-    assert "--tmpfs=/run:rw,exec,nosuid,nodev,size=64m" in command
-    assert not any(value.startswith("--tmpfs=/run:") and ",exec," not in value for value in command)
+    assert "--tmpfs=/run:rw,noexec,nosuid,nodev,size=64m" in command
+    assert not any(value.startswith("--tmpfs=/run:") and ",exec," in value for value in command)
     assert "--cap-drop=ALL" in command
     assert "--cap-add=CHOWN" in command
     assert "--cap-add=SETUID" in command
