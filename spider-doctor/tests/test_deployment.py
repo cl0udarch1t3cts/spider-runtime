@@ -44,7 +44,7 @@ def test_task_network_is_internal_and_egress_requires_proxy() -> None:
         "spider-doctor-egress-proxy"
     ]
     assert "acl allowed_protocol proto HTTP HTTPS" in squid
-    assert "http_access deny !allowed_protocol" in squid
+    assert "http_access deny !allowed_protocol !CONNECT" in squid
     assert "acl blocked_v4 dst 169.254.0.0/16" in squid
     assert "acl blocked_v6 dst fc00::/7" in squid
     assert "acl blocked_names dstdomain localhost .local .internal" in squid
