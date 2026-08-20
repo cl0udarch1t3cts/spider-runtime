@@ -8,3 +8,4 @@
 /sandbox/
 /dist/
 *.egg-info/
+.idea/
