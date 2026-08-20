@@ -38,3 +38,10 @@ du -sb -- \
   "data/tasks/$TASK_ID/hermes-home/home"/.[!.]* \
   "data/tasks/$TASK_ID/hermes-home/home"/..?* \
   2>/dev/null | sort -nr | head -20 || true
+
+printf '\nLargest task-home/home/.cache children:\n'
+du -sb -- \
+  "data/tasks/$TASK_ID/hermes-home/home/.cache"/* \
+  "data/tasks/$TASK_ID/hermes-home/home/.cache"/.[!.]* \
+  "data/tasks/$TASK_ID/hermes-home/home/.cache"/..?* \
+  2>/dev/null | sort -nr | head -20 || true
