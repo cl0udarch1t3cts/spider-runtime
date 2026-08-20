@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -49,13 +49,25 @@ class DoctorTask(BaseModel):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+AgentChangedPath = Annotated[
+    str,
+    Field(
+        pattern=r"^(?:/workspace/)?[^/].*$",
+        description=(
+            "Repository-relative POSIX path. The exact /workspace/ mount prefix "
+            "is accepted for compatibility; other absolute paths and '..' are forbidden."
+        ),
+    ),
+]
+
+
 class DoctorResult(BaseModel):
     # Agent-authored results can request review or report failure. Only trusted
     # host code may transition the durable task to succeeded after validation,
     # candidate persistence, and publication.
     status: Literal[DoctorStatus.AWAITING_REVIEW, DoctorStatus.FAILED]
     summary: str
-    changed_files: list[str] = Field(default_factory=list)
+    changed_files: list[AgentChangedPath] = Field(default_factory=list)
     tests: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -67,11 +79,19 @@ class DoctorResult(BaseModel):
             raise ValueError("agent result status must be awaiting_review or failed")
         return value
 
-    @field_validator("changed_files")
+    @field_validator("changed_files", mode="before")
     @classmethod
-    def safe_relative_paths(cls, values: list[str]) -> list[str]:
-        for value in values:
+    def safe_relative_paths(cls, values: Any) -> Any:
+        if not isinstance(values, list):
+            return values
+        normalized: list[Any] = []
+        for raw_value in values:
+            if not isinstance(raw_value, str):
+                normalized.append(raw_value)
+                continue
+            value = raw_value.removeprefix("/workspace/")
             path = PurePosixPath(value)
             if path.is_absolute() or not path.parts or ".." in path.parts:
-                raise ValueError(f"unsafe changed file: {value!r}")
-        return values
+                raise ValueError(f"unsafe changed file: {raw_value!r}")
+            normalized.append(value)
+        return normalized

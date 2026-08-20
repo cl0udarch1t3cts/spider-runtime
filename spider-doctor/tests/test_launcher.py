@@ -182,6 +182,19 @@ def test_launcher_revalidates_broker_token_before_each_container(tmp_path: Path)
         )
 
 
+def test_result_normalizes_exact_workspace_mount_prefix() -> None:
+    result = DockerHermesLauncher.parse_result(
+        '{"status":"awaiting_review","summary":"fixed","changed_files":['
+        '"/workspace/scrapers/example/meta.json",'
+        '"/workspace/scrapers/example/scrape.py"],"tests":[],"errors":[]}'
+    )
+
+    assert result.changed_files == [
+        "scrapers/example/meta.json",
+        "scrapers/example/scrape.py",
+    ]
+
+
 def test_result_rejects_path_traversal(tmp_path: Path) -> None:
     launcher = DockerHermesLauncher(LauncherConfig(image=DIGEST, hermes_home=tmp_path))
     with pytest.raises(ValueError, match="unsafe changed file"):
