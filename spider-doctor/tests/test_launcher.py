@@ -1,4 +1,5 @@
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,11 @@ def test_launcher_rejects_mutable_image_reference(tmp_path: Path) -> None:
         LauncherConfig(image="nousresearch/hermes-agent:latest", hermes_home=tmp_path)
 
 
+def test_launcher_rejects_nonofficial_digest_pinned_image(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="official stock Hermes"):
+        LauncherConfig(image="attacker/hermes-agent@sha256:" + "a" * 64, hermes_home=tmp_path)
+
+
 def test_command_has_fail_closed_container_boundaries(tmp_path: Path) -> None:
     config = LauncherConfig(image=DIGEST, hermes_home=tmp_path / "hermes", timeout_seconds=600)
     launcher = DockerHermesLauncher(config)
@@ -58,6 +64,8 @@ def test_command_has_fail_closed_container_boundaries(tmp_path: Path) -> None:
     assert "--cpus=2" in command
     assert "--ulimit=fsize=104857600:104857600" in command
     assert "--ulimit=nofile=1024:1024" in command
+    assert "--label=spider-doctor.managed=true" in command
+    assert "--label=spider-doctor.task-id=task-1" in command
     assert "--env=HTTP_PROXY=http://spider-doctor-egress-proxy:3128" in command
     assert "--env=HTTPS_PROXY=http://spider-doctor-egress-proxy:3128" in command
     assert "--env=NO_PROXY=spider-doctor-broker,localhost,127.0.0.1" in command
@@ -95,6 +103,32 @@ def test_command_mounts_scoped_broker_token_without_embedding_secret(tmp_path: P
     assert f"--volume={snapshot.resolve()}:/task/proxy-token:ro" in command
     assert snapshot.read_text() == "scoped-broker-token\n"
     assert "scoped-broker-token" not in " ".join(command)
+
+
+def test_startup_reconciliation_force_removes_all_managed_task_containers(
+    tmp_path: Path, monkeypatch
+) -> None:
+    calls = []
+    ps_results = ["container-a\ncontainer-b\n", ""]
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[1:3] == ["ps", "-aq"]:
+            return subprocess.CompletedProcess(argv, 0, stdout=ps_results.pop(0), stderr="")
+        if argv[1:3] == ["rm", "-f"]:
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+        raise AssertionError(f"unexpected Docker command: {argv}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    launcher = DockerHermesLauncher(LauncherConfig(image=DIGEST, hermes_home=tmp_path))
+
+    launcher.reconcile_orphans()
+
+    assert calls == [
+        ["docker", "ps", "-aq", "--filter", "label=spider-doctor.managed=true"],
+        ["docker", "rm", "-f", "container-a", "container-b"],
+        ["docker", "ps", "-aq", "--filter", "label=spider-doctor.managed=true"],
+    ]
 
 
 def test_launcher_rejects_insecure_broker_token_file(tmp_path: Path) -> None:

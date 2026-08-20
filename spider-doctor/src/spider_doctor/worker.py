@@ -37,6 +37,7 @@ class Workspace(Protocol):
 
 
 class Launcher(Protocol):
+    def reconcile_orphans(self) -> None: ...
     def run(self, task: DoctorTask, *, workspace: Path, task_file: Path, output_dir: Path) -> DoctorResult: ...
 
 

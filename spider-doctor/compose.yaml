@@ -26,7 +26,7 @@ services:
       context: .
       dockerfile: Dockerfile.broker
       args:
-        HERMES_BASE_IMAGE: ${SPIDER_DOCTOR_HERMES_IMAGE:?set a digest-pinned stock Hermes image}
+        HERMES_BASE_IMAGE: nousresearch/hermes-agent@${SPIDER_DOCTOR_HERMES_DIGEST:?set the reviewed stock Hermes digest}
     entrypoint:
       - /opt/hermes/.venv/bin/python
       - /opt/spider-doctor/codex_broker.py
@@ -79,7 +79,7 @@ services:
       SPIDER_DOCTOR_WORKSPACE_ROOT: ${SPIDER_DOCTOR_HOST_ROOT}/data/workspaces
       SPIDER_DOCTOR_TASK_ROOT: ${SPIDER_DOCTOR_HOST_ROOT}/data/tasks
       SPIDER_DOCTOR_HERMES_HOME: ${SPIDER_DOCTOR_HOST_ROOT}/data/hermes
-      SPIDER_DOCTOR_HERMES_IMAGE: ${SPIDER_DOCTOR_HERMES_IMAGE}
+      SPIDER_DOCTOR_HERMES_IMAGE: nousresearch/hermes-agent@${SPIDER_DOCTOR_HERMES_DIGEST}
       SPIDER_DOCTOR_PROXY_TOKEN_FILE: ${SPIDER_DOCTOR_HOST_ROOT}/data/proxy-token
       SPIDER_DOCTOR_DOCKER_NETWORK: ${SPIDER_DOCTOR_NETWORK:-spider-doctor-egress}
       SPIDER_DOCTOR_EGRESS_PROXY_URL: http://spider-doctor-egress-proxy:3128

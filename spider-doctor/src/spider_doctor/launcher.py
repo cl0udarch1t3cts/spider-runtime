@@ -19,7 +19,7 @@ import yaml
 
 from spider_doctor.models import DoctorResult, DoctorTask
 
-_DIGEST = re.compile(r"^[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$")
+_DIGEST = re.compile(r"^nousresearch/hermes-agent@sha256:[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class LauncherConfig:
 
     def __post_init__(self) -> None:
         if not _DIGEST.fullmatch(self.image):
-            raise ValueError("Hermes image must be pinned by sha256 digest")
+            raise ValueError("Hermes image must be the official stock Hermes image pinned by sha256 digest")
         if self.timeout_seconds < 1 or self.max_turns < 1:
             raise ValueError("timeout and max turns must be positive")
         proxy = urlparse(self.egress_proxy_url)
@@ -91,6 +91,43 @@ class DockerHermesLauncher:
     def __init__(self, config: LauncherConfig) -> None:
         self.config = config
 
+    def _managed_container_ids(self) -> list[str]:
+        result = subprocess.run(
+            [
+                self.config.docker_binary,
+                "ps",
+                "-aq",
+                "--filter",
+                "label=spider-doctor.managed=true",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"could not list managed Doctor containers: {result.stderr[-1000:]}")
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+    def reconcile_orphans(self) -> None:
+        """Stop task containers left behind by a previous dispatcher process."""
+        container_ids = self._managed_container_ids()
+        if container_ids:
+            removed = subprocess.run(
+                [self.config.docker_binary, "rm", "-f", *container_ids],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if removed.returncode != 0:
+                raise RuntimeError(
+                    f"could not remove orphaned Doctor containers: {removed.stderr[-1000:]}"
+                )
+        remaining = self._managed_container_ids()
+        if remaining:
+            raise RuntimeError("orphaned Doctor task containers remain after reconciliation")
+
     @staticmethod
     def _container_name(task: DoctorTask) -> str:
         safe = re.sub(r"[^a-z0-9_.-]", "-", task.id.lower()).strip("-.")
@@ -118,6 +155,8 @@ class DockerHermesLauncher:
             "run",
             "--rm",
             f"--name={self._container_name(task)}",
+            "--label=spider-doctor.managed=true",
+            f"--label=spider-doctor.task-id={task.id}",
             "--cap-drop=ALL",
             "--cap-add=CHOWN",
             "--cap-add=SETUID",
@@ -357,7 +396,7 @@ class DockerHermesLauncher:
             else:
                 content = stdout.decode("utf-8", errors="strict")
             return self.parse_result(content.strip())
-        except Exception:
+        except BaseException:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:

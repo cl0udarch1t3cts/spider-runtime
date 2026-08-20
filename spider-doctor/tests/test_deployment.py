@@ -11,14 +11,18 @@ def test_compose_keeps_hermes_in_digest_pinned_containers() -> None:
 
     assert set(services) == {"broker", "doctor", "egress-proxy"}
     assert services["broker"]["build"]["dockerfile"] == "Dockerfile.broker"
-    assert services["broker"]["build"]["args"]["HERMES_BASE_IMAGE"] == "${SPIDER_DOCTOR_HERMES_IMAGE:?set a digest-pinned stock Hermes image}"
+    assert services["broker"]["build"]["args"]["HERMES_BASE_IMAGE"] == (
+        "nousresearch/hermes-agent@${SPIDER_DOCTOR_HERMES_DIGEST:?set the reviewed stock Hermes digest}"
+    )
     assert services["broker"]["entrypoint"] == [
         "/opt/hermes/.venv/bin/python",
         "/opt/spider-doctor/codex_broker.py",
     ]
     assert services["broker"]["user"] == "${SPIDER_DOCTOR_UID}:${SPIDER_DOCTOR_GID}"
     assert services["doctor"]["build"]["context"] == "."
-    assert services["doctor"]["environment"]["SPIDER_DOCTOR_HERMES_IMAGE"] == "${SPIDER_DOCTOR_HERMES_IMAGE}"
+    assert services["doctor"]["environment"]["SPIDER_DOCTOR_HERMES_IMAGE"] == (
+        "nousresearch/hermes-agent@${SPIDER_DOCTOR_HERMES_DIGEST}"
+    )
 
 
 def test_task_network_is_internal_and_egress_requires_proxy() -> None:
@@ -74,12 +78,21 @@ def test_dispatcher_mounts_only_required_daemon_paths_at_identical_host_paths() 
 def test_example_environment_contains_settings_not_credentials() -> None:
     text = (ROOT / ".env.example").read_text()
 
-    assert "SPIDER_DOCTOR_HERMES_IMAGE=" in text
+    assert "SPIDER_DOCTOR_HERMES_DIGEST=sha256:" in text
     assert "SPIDER_DOCTOR_HOST_ROOT=/home/spider/projects/spider-doctor" in text
     assert "SPIDER_SCRIPTS_HOST_PATH=/home/spider/projects/spider-scripts" in text
     assert "TOKEN=" not in text
     assert "PASSWORD=" not in text
     assert "AUTH=" not in text
+    assert "nousresearch/hermes-agent@" not in text
+
+
+def test_preflight_and_setup_require_official_stock_hermes() -> None:
+    preflight = (ROOT / "scripts" / "preflight.py").read_text()
+    setup = (ROOT / "scripts" / "configure-hermes.sh").read_text()
+
+    assert 'r"^sha256:[0-9a-f]{64}$"' in preflight
+    assert 'HERMES_IMAGE="nousresearch/hermes-agent@${SPIDER_DOCTOR_HERMES_DIGEST}"' in setup
 
 
 def test_setup_script_uses_separate_trusted_and_credential_free_homes() -> None:
@@ -116,4 +129,6 @@ def test_start_fails_closed_through_preflight() -> None:
     assert '"network", "inspect"' in preflight
     assert 'true|restricted-v1' in preflight
     assert "scripts/preflight.py" in start
+    assert "docker compose up --build -d egress-proxy\npython3 scripts/preflight.py" in start
+    assert "egress-proxy broker\npython3 scripts/preflight.py" not in start
     assert "docker compose up --build -d --wait" in start

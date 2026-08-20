@@ -13,10 +13,11 @@ set -a
 . ./.env
 set +a
 
-if [[ ! ${SPIDER_DOCTOR_HERMES_IMAGE:-} =~ ^[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
-  printf 'SPIDER_DOCTOR_HERMES_IMAGE must be an official image pinned by sha256 digest.\n' >&2
+if [[ ! ${SPIDER_DOCTOR_HERMES_DIGEST:-} =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  printf 'SPIDER_DOCTOR_HERMES_DIGEST must be a full reviewed sha256 digest.\n' >&2
   exit 1
 fi
+HERMES_IMAGE="nousresearch/hermes-agent@${SPIDER_DOCTOR_HERMES_DIGEST}"
 if [[ ${SPIDER_DOCTOR_HOST_ROOT:-} != "$PWD" ]]; then
   printf 'SPIDER_DOCTOR_HOST_ROOT must equal this absolute checkout path: %s\n' "$PWD" >&2
   exit 1
@@ -38,7 +39,7 @@ common=(
 run_task_hermes() {
   docker run "${common[@]}" \
     -v "${SPIDER_DOCTOR_HOST_ROOT}/data/hermes:/opt/data:rw" \
-    "$SPIDER_DOCTOR_HERMES_IMAGE" "$@"
+    "$HERMES_IMAGE" "$@"
 }
 
 run_task_hermes config set providers.doctor-codex.api http://spider-doctor-broker:8645/v1
@@ -62,7 +63,7 @@ if [[ ! -s data/broker-hermes/auth.json ]]; then
   printf '\nAuthenticate the trusted broker with OpenAI Codex OAuth.\n'
   docker run -it "${common[@]}" \
     -v "${SPIDER_DOCTOR_HOST_ROOT}/data/broker-hermes:/opt/data:rw" \
-    "$SPIDER_DOCTOR_HERMES_IMAGE" auth add openai-codex
+    "$HERMES_IMAGE" auth add openai-codex
 fi
 
 printf '\nHermes homes configured. OAuth exists only in data/broker-hermes.\n'

@@ -20,6 +20,8 @@ The trusted Doctor container alone receives the Docker socket, Mongo control-net
 
 After verification, trusted code stages only allowlisted paths, creates a commit, persists its candidate SHA in MongoDB **before** push, and marks the task `succeeded` only after that SHA is reachable from the publication branch. Restart reconciliation republishes the durable candidate without regenerating code and records it as `result.commit_sha`.
 
+Every disposable task container carries a managed label. Graceful shutdown removes the active sibling container, and startup fails closed while force-removing any labeled container orphaned by a prior crash before the worker may claim or reclaim a task. Run exactly one Doctor dispatcher replica.
+
 ## Containerized deployment
 
 Hermes is not installed on the VM. Disposable task agents use the official stock image pinned in `.env.example`. The broker sidecar builds **from that exact stock image** and adds only the project-owned restricted HTTP entrypoint; it does not patch or fork Hermes. The sidecar reuses the stock image's tested Codex OAuth resolver and refresh logic while keeping the OAuth store outside every task container. The Doctor dispatcher and restricted egress proxy have separate project-owned images.
@@ -31,7 +33,7 @@ Prerequisites:
 - a clean sibling `spider-scripts` checkout with a writable GitHub remote;
 - the deployment user authorized for Docker and GitHub SSH pushes.
 
-Never use `:latest`; mutable Hermes references are rejected.
+Never use `:latest` or a substitute repository. Only `nousresearch/hermes-agent@sha256:<64 hex>` is accepted for the OAuth-bearing broker base and disposable task runtime.
 
 ### 1. Generate non-secret deployment settings
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import signal
 import time
 from datetime import timedelta
 
@@ -16,6 +17,10 @@ from spider_doctor.worker import DoctorWorker
 from spider_doctor.workspace import GitWorkspace
 
 logger = logging.getLogger(__name__)
+
+
+def _shutdown_on_signal(signum, _frame) -> None:
+    raise SystemExit(128 + signum)
 
 
 def create_worker(settings: Settings) -> DoctorWorker:
@@ -65,8 +70,10 @@ def main() -> None:
     parser.add_argument("--once", action="store_true", help="process at most one task")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    signal.signal(signal.SIGTERM, _shutdown_on_signal)
     settings = Settings()
     worker = create_worker(settings)
+    worker.launcher.reconcile_orphans()
     while True:
         result = worker.process_one()
         if result is not None:

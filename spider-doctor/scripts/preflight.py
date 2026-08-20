@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DIGEST = re.compile(r"^[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$")
+DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -43,9 +43,9 @@ def main() -> int:
         return 1
     env = {**os.environ, **configured}
 
-    image = env.get("SPIDER_DOCTOR_HERMES_IMAGE", "")
-    if not DIGEST.fullmatch(image):
-        failures.append("SPIDER_DOCTOR_HERMES_IMAGE is not pinned by a full sha256 digest")
+    digest = env.get("SPIDER_DOCTOR_HERMES_DIGEST", "")
+    if not DIGEST.fullmatch(digest):
+        failures.append("SPIDER_DOCTOR_HERMES_DIGEST is not a full reviewed sha256 digest")
 
     host_root = Path(env.get("SPIDER_DOCTOR_HOST_ROOT", ""))
     scripts_root = Path(env.get("SPIDER_SCRIPTS_HOST_PATH", ""))
