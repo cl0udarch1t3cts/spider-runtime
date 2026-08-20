@@ -59,6 +59,18 @@ def test_command_has_fail_closed_container_boundaries(tmp_path: Path) -> None:
     assert "--cap-add=CHOWN" in command
     assert "--cap-add=SETUID" in command
     assert "--cap-add=SETGID" in command
+    assert "--cap-add=DAC_READ_SEARCH" in command
+    assert not any(
+        value.startswith("--cap-add=")
+        and value
+        not in {
+            "--cap-add=CHOWN",
+            "--cap-add=SETUID",
+            "--cap-add=SETGID",
+            "--cap-add=DAC_READ_SEARCH",
+        }
+        for value in command
+    )
     assert "--security-opt=no-new-privileges:true" in command
     assert "--pids-limit=128" in command
     assert "--memory=4g" in command

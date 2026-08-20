@@ -162,6 +162,12 @@ class DockerHermesLauncher:
             "--cap-add=CHOWN",
             "--cap-add=SETUID",
             "--cap-add=SETGID",
+            # Stock Hermes remaps its runtime UID before dropping privileges.
+            # The deployment-owned task home is mode 0700, so bootstrap root
+            # needs the narrow read/traversal bypass to enter it after all
+            # ambient capabilities are dropped. The probe script verifies that
+            # DAC_READ_SEARCH is sufficient; DAC_OVERRIDE is not granted.
+            "--cap-add=DAC_READ_SEARCH",
             "--security-opt=no-new-privileges:true",
             f"--pids-limit={self.config.pids_limit}",
             f"--memory={self.config.memory}",
