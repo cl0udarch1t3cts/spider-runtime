@@ -59,7 +59,6 @@ services:
     entrypoint: ["/bin/sh", "-ceu"]
     command:
       - |
-        chmod 0770 /srv/spider/artifacts /srv/spider/locks
         chown -R spider:spider /srv/spider/artifacts /srv/spider/locks
     volumes:
       - artifacts:/srv/spider/artifacts
