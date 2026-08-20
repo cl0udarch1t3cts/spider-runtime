@@ -45,6 +45,7 @@ docker run --rm \
   --cap-add=CHOWN \
   --cap-add=SETUID \
   --cap-add=SETGID \
+  --cap-add=DAC_READ_SEARCH \
   --security-opt=no-new-privileges:true \
   --pids-limit=256 \
   --memory=4g \
