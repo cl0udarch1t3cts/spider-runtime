@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     proxy_token_file: Path | None = None
     docker_binary: str = "docker"
     docker_network: str = "spider-doctor-egress"
+    egress_proxy_url: str = "http://spider-doctor-egress-proxy:3128"
     publication_branch: str = "main"
     git_author_name: str = "Spider Doctor"
     git_author_email: str = "spider-doctor@localhost"

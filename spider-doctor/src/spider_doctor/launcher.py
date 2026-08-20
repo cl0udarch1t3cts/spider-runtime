@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -37,12 +38,17 @@ class LauncherConfig:
     max_task_storage_bytes: int = 512 * 1024 * 1024
     max_task_files: int = 20_000
     verify_network_policy: bool = True
+    egress_proxy_url: str = "http://spider-doctor-egress-proxy:3128"
+    no_proxy: str = "spider-doctor-broker,localhost,127.0.0.1"
 
     def __post_init__(self) -> None:
         if not _DIGEST.fullmatch(self.image):
             raise ValueError("Hermes image must be pinned by sha256 digest")
         if self.timeout_seconds < 1 or self.max_turns < 1:
             raise ValueError("timeout and max turns must be positive")
+        proxy = urlparse(self.egress_proxy_url)
+        if proxy.scheme != "http" or not proxy.hostname or proxy.username or proxy.password:
+            raise ValueError("egress proxy must be an unauthenticated http URL")
         self.validated_proxy_token_file()
 
     def validated_proxy_token_file(self) -> Path | None:
@@ -112,8 +118,10 @@ class DockerHermesLauncher:
             "run",
             "--rm",
             f"--name={self._container_name(task)}",
-            "--read-only",
             "--cap-drop=ALL",
+            "--cap-add=CHOWN",
+            "--cap-add=SETUID",
+            "--cap-add=SETGID",
             "--security-opt=no-new-privileges:true",
             f"--pids-limit={self.config.pids_limit}",
             f"--memory={self.config.memory}",
@@ -121,6 +129,12 @@ class DockerHermesLauncher:
             f"--ulimit=fsize={self.config.max_single_file_bytes}:{self.config.max_single_file_bytes}",
             "--ulimit=nofile=1024:1024",
             f"--network={self.config.network}",
+            f"--env=HTTP_PROXY={self.config.egress_proxy_url}",
+            f"--env=HTTPS_PROXY={self.config.egress_proxy_url}",
+            f"--env=NO_PROXY={self.config.no_proxy}",
+            f"--env=http_proxy={self.config.egress_proxy_url}",
+            f"--env=https_proxy={self.config.egress_proxy_url}",
+            f"--env=no_proxy={self.config.no_proxy}",
             f"--env=HERMES_UID={os.getuid()}",
             f"--env=HERMES_GID={os.getgid()}",
             "--tmpfs=/run:rw,nosuid,nodev,size=64m",

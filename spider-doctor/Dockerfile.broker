@@ -1,0 +1,8 @@
+ARG HERMES_BASE_IMAGE
+FROM ${HERMES_BASE_IMAGE}
+
+COPY src/spider_doctor/codex_broker.py /opt/spider-doctor/codex_broker.py
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HERMES_HOME=/opt/data

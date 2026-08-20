@@ -12,6 +12,10 @@ dependencies = [
   "pydantic-settings>=2.10",
   "pymongo>=4.13",
   "PyYAML>=6.0",
+  # Match the pinned stock Hermes v2026.8.18 broker base image exactly.
+  "httpx==0.28.1",
+  "starlette==1.3.1",
+  "uvicorn==0.41.0",
 ]
 
 [dependency-groups]
@@ -27,3 +31,6 @@ spider-doctor-worker = "spider_doctor.main:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+filterwarnings = [
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]

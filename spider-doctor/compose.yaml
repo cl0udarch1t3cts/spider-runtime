@@ -1,0 +1,118 @@
+services:
+  egress-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.egress-proxy
+    restart: unless-stopped
+    init: true
+    networks:
+      task-egress:
+        aliases: [spider-doctor-egress-proxy]
+      uplink: {}
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/log/squid:size=32m
+      - /var/spool/squid:size=32m
+      - /run:size=8m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 64
+    mem_limit: 256m
+
+  broker:
+    build:
+      context: .
+      dockerfile: Dockerfile.broker
+      args:
+        HERMES_BASE_IMAGE: ${SPIDER_DOCTOR_HERMES_IMAGE:?set a digest-pinned stock Hermes image}
+    entrypoint:
+      - /opt/hermes/.venv/bin/python
+      - /opt/spider-doctor/codex_broker.py
+    command: ["--host", "0.0.0.0", "--port", "8645"]
+    restart: unless-stopped
+    init: true
+    user: ${SPIDER_DOCTOR_UID}:${SPIDER_DOCTOR_GID}
+    environment:
+      HERMES_HOME: /opt/data
+      PYTHONDONTWRITEBYTECODE: "1"
+      SPIDER_BROKER_CLIENT_TOKEN_FILE: /run/secrets/proxy-token
+      SPIDER_BROKER_ALLOWED_MODEL: ${SPIDER_DOCTOR_MODEL:-gpt-5.4}
+      SPIDER_BROKER_REQUESTS_PER_MINUTE: "20"
+      SPIDER_BROKER_MAX_CONCURRENT: "2"
+    volumes:
+      - ${SPIDER_DOCTOR_HOST_ROOT:?set the absolute Doctor checkout path}/data/broker-hermes:/opt/data:rw
+      - ${SPIDER_DOCTOR_HOST_ROOT}/data/proxy-token:/run/secrets/proxy-token:ro
+    networks:
+      task-egress:
+        aliases: [spider-doctor-broker]
+      uplink: {}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 128
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "/opt/hermes/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8645/health/ready', timeout=25)"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  doctor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    user: ${SPIDER_DOCTOR_UID}:${SPIDER_DOCTOR_GID}
+    group_add:
+      - ${SPIDER_DOCTOR_DOCKER_GID:?set the Docker socket group ID}
+    working_dir: /opt/spider-doctor
+    environment:
+      HOME: /home/doctor
+      SPIDER_DOCTOR_MONGODB_URI: mongodb://mongo:27017/spider?replicaSet=rs0&directConnection=true
+      SPIDER_DOCTOR_SOURCE_REPOSITORY: ${SPIDER_SCRIPTS_HOST_PATH}
+      SPIDER_DOCTOR_WORKSPACE_ROOT: ${SPIDER_DOCTOR_HOST_ROOT}/data/workspaces
+      SPIDER_DOCTOR_TASK_ROOT: ${SPIDER_DOCTOR_HOST_ROOT}/data/tasks
+      SPIDER_DOCTOR_HERMES_HOME: ${SPIDER_DOCTOR_HOST_ROOT}/data/hermes
+      SPIDER_DOCTOR_HERMES_IMAGE: ${SPIDER_DOCTOR_HERMES_IMAGE}
+      SPIDER_DOCTOR_PROXY_TOKEN_FILE: ${SPIDER_DOCTOR_HOST_ROOT}/data/proxy-token
+      SPIDER_DOCTOR_DOCKER_NETWORK: ${SPIDER_DOCTOR_NETWORK:-spider-doctor-egress}
+      SPIDER_DOCTOR_EGRESS_PROXY_URL: http://spider-doctor-egress-proxy:3128
+      SPIDER_DOCTOR_PUBLICATION_BRANCH: ${SPIDER_DOCTOR_PUBLICATION_BRANCH:-main}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${SPIDER_DOCTOR_HOST_ROOT:?set the absolute Doctor checkout path}/data/workspaces:${SPIDER_DOCTOR_HOST_ROOT}/data/workspaces:rw
+      - ${SPIDER_DOCTOR_HOST_ROOT}/data/tasks:${SPIDER_DOCTOR_HOST_ROOT}/data/tasks:rw
+      - ${SPIDER_DOCTOR_HOST_ROOT}/data/hermes:${SPIDER_DOCTOR_HOST_ROOT}/data/hermes:ro
+      - ${SPIDER_DOCTOR_HOST_ROOT}/data/proxy-token:${SPIDER_DOCTOR_HOST_ROOT}/data/proxy-token:ro
+      - ${SPIDER_SCRIPTS_HOST_PATH:?set the absolute spider-scripts path}:${SPIDER_SCRIPTS_HOST_PATH}:ro
+      - ${SPIDER_DOCTOR_SSH_HOST_PATH:-/home/spider/.ssh}:/home/doctor/.ssh:ro
+    networks:
+      - executor-control
+      - uplink
+    depends_on:
+      broker:
+        condition: service_healthy
+      egress-proxy:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 256
+    mem_limit: 2g
+
+networks:
+  executor-control:
+    external: true
+    name: ${SPIDER_EXECUTOR_CONTROL_NETWORK:-spider-executor_control}
+  task-egress:
+    name: ${SPIDER_DOCTOR_NETWORK:-spider-doctor-egress}
+    internal: true
+    labels:
+      spider-doctor.egress-policy: restricted-v1
+  uplink: {}

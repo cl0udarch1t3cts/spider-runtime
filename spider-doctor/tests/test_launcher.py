@@ -43,15 +43,26 @@ def test_command_has_fail_closed_container_boundaries(tmp_path: Path) -> None:
     joined = " ".join(command)
 
     assert command[:3] == ["docker", "run", "--rm"]
-    assert "--read-only" in command
+    # The unmodified stock image remaps its hermes UID/GID at bootstrap and
+    # therefore needs its ephemeral root layer writable; only scoped bind
+    # mounts persist after --rm.
+    assert "--read-only" not in command
     assert "--tmpfs=/run:rw,nosuid,nodev,size=64m" in command
     assert "--cap-drop=ALL" in command
+    assert "--cap-add=CHOWN" in command
+    assert "--cap-add=SETUID" in command
+    assert "--cap-add=SETGID" in command
     assert "--security-opt=no-new-privileges:true" in command
     assert "--pids-limit=128" in command
     assert "--memory=4g" in command
     assert "--cpus=2" in command
     assert "--ulimit=fsize=104857600:104857600" in command
     assert "--ulimit=nofile=1024:1024" in command
+    assert "--env=HTTP_PROXY=http://spider-doctor-egress-proxy:3128" in command
+    assert "--env=HTTPS_PROXY=http://spider-doctor-egress-proxy:3128" in command
+    assert "--env=NO_PROXY=spider-doctor-broker,localhost,127.0.0.1" in command
+    assert "--env=https_proxy=http://spider-doctor-egress-proxy:3128" in command
+    assert "--env=no_proxy=spider-doctor-broker,localhost,127.0.0.1" in command
     assert f"--env=HERMES_UID={os.getuid()}" in command
     assert f"--env=HERMES_GID={os.getgid()}" in command
     assert ":/workspace:rw" in joined

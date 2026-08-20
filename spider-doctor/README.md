@@ -1,134 +1,108 @@
 # Spider Doctor
 
-A trusted host dispatcher that claims deterministic repair tasks from `spider.doctor_tasks` and launches **one disposable Hermes container per attempt**. The deterministic executor remains LLM-free.
+A trusted dispatcher that consumes `spider.doctor_tasks` and launches one disposable, stock Hermes container per creation or repair attempt. `spider-executor` remains deterministic and LLM-free.
 
 ## Security boundary
 
-The Hermes container receives only:
+The disposable Hermes task receives only:
 
-- a standalone disposable clone of `spider-scripts` at the exact failing Git SHA;
+- a task-specific clone of `spider-scripts` at the authoritative release SHA;
 - task-scoped Mongo evidence serialized to a read-only JSON file;
 - a task result directory;
-- a dedicated Hermes data directory.
+- a dedicated, credential-free Hermes home;
+- a narrow client token accepted only by the local broker.
 
-It does **not** receive MongoDB credentials, production artifacts, GitHub credentials, or `/var/run/docker.sock`. It is non-root, capability-free, read-only except for the task mounts, resource-limited, and attached only to a named egress network. The dispatcher validates the actual Git diff and rejects changes outside the `entry_id`-specific allowlist.
+It does **not** receive MongoDB credentials, the broker's OAuth credential, GitHub credentials, production artifacts, or `/var/run/docker.sock`. The unmodified stock image briefly uses only `CHOWN`, `SETUID`, and `SETGID` to map its runtime user to the host UID/GID, then executes Hermes as that non-root user. Its writable container layer is disposable under `--rm`; only task-scoped mounts persist. It is resource-limited and attached to an internal Docker network with no direct external route.
 
-After the disposable agent returns a verified patch, the trusted host dispatcher stages only the validated paths, commits, persists the candidate SHA in MongoDB, and pushes it. The task becomes `succeeded` only after the candidate is reachable from the configured publication branch. A crash or ambiguous push is reconciled from the durable candidate SHA without regenerating code.
+Public HTTP(S) from a task must traverse the restricted Squid sidecar, which rejects private, loopback, link-local, metadata, multicast, and other non-public destinations after DNS resolution. Provider traffic goes to the local stock-Hermes broker. Only the trusted broker and restricted proxy are dual-homed; the task is not.
 
-## Prerequisites
+The trusted Doctor container alone receives the Docker socket, Mongo control-network access, a read-only `spider-scripts` source checkout, persistent task workspaces, and the host's Git SSH identity. It validates the actual diff before host-side commit and publication from the isolated workspace.
 
-- Docker Engine and the Docker CLI on the dispatcher host.
-- A clean local `../spider-scripts` clone containing the failing release.
-- MongoDB access from the dispatcher host.
-- A dedicated Hermes home initialized for the Doctor.
-- A pinned Hermes image reference such as `nousresearch/hermes-agent@sha256:<64 hex>`.
-- A Docker network named `spider-doctor-egress` whose host firewall denies host, RFC1918, link-local, metadata, Mongo, and control-plane destinations. After independently verifying that enforcement, label it `spider-doctor.egress-policy=restricted-v1`; the launcher refuses an absent or unlabeled network. The label is an operator attestation, not a substitute for the firewall itself.
+After verification, trusted code stages only allowlisted paths, creates a commit, persists its candidate SHA in MongoDB **before** push, and marks the task `succeeded` only after that SHA is reachable from the publication branch. Restart reconciliation republishes the durable candidate without regenerating code and records it as `result.commit_sha`.
 
-Never use `:latest` in production; mutable image references are rejected.
+## Containerized deployment
 
-## Initialize the dedicated Hermes home
+Hermes is not installed on the VM. Disposable task agents use the official stock image pinned in `.env.example`. The broker sidecar builds **from that exact stock image** and adds only the project-owned restricted HTTP entrypoint; it does not patch or fork Hermes. The sidecar reuses the stock image's tested Codex OAuth resolver and refresh logic while keeping the OAuth store outside every task container. The Doctor dispatcher and restricted egress proxy have separate project-owned images.
 
-Create the home with the official image and configure its model/provider to use a credential-injecting proxy reachable on `spider-doctor-egress`:
+Prerequisites:
+
+- Docker Engine with Compose;
+- `spider-executor` running from the sibling checkout, including its `spider-executor_control` network;
+- a clean sibling `spider-scripts` checkout with a writable GitHub remote;
+- the deployment user authorized for Docker and GitHub SSH pushes.
+
+Never use `:latest`; mutable Hermes references are rejected.
+
+### 1. Generate non-secret deployment settings
 
 ```bash
-mkdir -p data/hermes
-docker run -it --rm \
-  -v "$PWD/data/hermes:/opt/data" \
-  nousresearch/hermes-agent@sha256:<digest> setup
+./scripts/init-env.py
 ```
 
-Do **not** save a provider API key or OAuth credential during this setup. The launcher rejects a non-empty `.env` or `auth.json` in the seed home. The proxy must authenticate the task container without exposing its upstream provider credential to Hermes or scraper subprocesses, while independently enforcing model, budget, rate, and expiry policy.
+This writes `.env` with the current absolute paths, user/group IDs, Docker socket group, and the reviewed stock-Hermes digest. `.env` contains settings, not OAuth credentials or broker tokens.
 
-The disposable clone's `AGENTS.md` is loaded automatically because Hermes starts in `/workspace`; it is the authoritative creation/repair procedure. An optional dedicated `spider-doctor` skill may add orchestration guidance, but the worker does not depend on an unverified skill installation.
-
-## Configure
+### 2. Configure the two Hermes homes
 
 ```bash
-export SPIDER_DOCTOR_HERMES_IMAGE='nousresearch/hermes-agent@sha256:<digest>'
-export SPIDER_DOCTOR_MONGODB_URI='mongodb://127.0.0.1:27017/spider?replicaSet=rs0&directConnection=true'
-export SPIDER_DOCTOR_SOURCE_REPOSITORY='../spider-scripts'
-export SPIDER_DOCTOR_HERMES_HOME='./data/hermes'
-export SPIDER_DOCTOR_PROXY_TOKEN_FILE='./data/proxy-token'
+./scripts/configure-hermes.sh
 ```
 
-All settings use the `SPIDER_DOCTOR_` prefix. See `src/spider_doctor/settings.py` for bounded defaults.
+The script:
 
-### Subscription broker configuration
+- creates a random mode-`0600` client token;
+- configures `data/hermes` as the credential-free disposable-task home;
+- configures its provider endpoint as `http://spider-doctor-broker:8645/v1`;
+- interactively performs `openai-codex` OAuth only in `data/broker-hermes`.
 
-The Doctor may receive a scoped local broker token, but never the provider's
-OAuth credential. Create the token file as the Doctor user and keep it mode
-`0600`:
+The OAuth credential is never copied into `data/hermes`, `.env`, or a task mount. The legacy `sandbox/` and `data/codex/` layout is ignored and not used.
+
+### 3. Start and verify
 
 ```bash
-mkdir -p data
-openssl rand -hex 32 > data/proxy-token
-chmod 600 data/proxy-token
+./scripts/start.sh
 ```
 
-Configure the dedicated, credential-free Hermes home through the Hermes CLI.
-Replace `172.30.0.1` with the restricted Doctor bridge gateway that runs the
-credential broker:
+Startup creates the internal task network and its restricted proxy/broker gateways, runs fail-closed preflight checks, builds the Doctor image, and starts the continuous dispatcher.
 
 ```bash
-export HERMES_HOME="$PWD/data/hermes"
-hermes config set providers.doctor-codex.api http://172.30.0.1:8645/v1
-hermes config set providers.doctor-codex.transport codex_responses
-hermes config set providers.doctor-codex.key_cmd 'cat /task/proxy-token'
-hermes config set providers.doctor-codex.default_model gpt-5.4
-hermes config set model.provider custom:doctor-codex
-hermes config set model.default gpt-5.4
-hermes config check
+docker compose ps -a
+docker compose logs --no-color --tail=100 doctor broker egress-proxy
 ```
 
-The dispatcher validates the host token file and mounts it read-only at
-`/task/proxy-token`. The token is intentionally usable only against the
-network-restricted local broker; the reusable OAuth access and refresh tokens
-remain outside every disposable Doctor container.
+`mongo-init` belongs to the Executor stack and is expected to remain exited with status 0.
 
-Run the broker from a separate trusted Hermes home that contains the operator's
-Codex OAuth login. Do not point it at `data/hermes`, which is intentionally
-credential-free:
+### Update or restart
 
 ```bash
-HERMES_HOME=/home/spider/.hermes hermes proxy start \
-  --provider openai-codex \
-  --host 172.30.0.1 \
-  --client-token-file "$PWD/data/proxy-token" \
-  --allowed-model gpt-5.4 \
-  --requests-per-minute 20 \
-  --max-concurrent-requests 2
+git pull --ff-only
+./scripts/start.sh
 ```
 
-Bind to the Doctor bridge gateway, not `0.0.0.0`, and enforce the restricted
-network/firewall policy before applying the required network attestation label.
+Compose rebuilds changed project images and recreates services as needed. Runtime and OAuth data are bind-mounted under ignored `data/` and survive container replacement.
 
-## Run
-
-Creation and repair tasks are written by `spider-executor`. Doctor reads the authoritative `entry_id`, business identity, base release, and failure evidence from MongoDB; there is no separate enqueue command or slug contract.
-
-Run one attempt or the continuous dispatcher:
+To stop Doctor without deleting runtime data:
 
 ```bash
-uv sync --frozen --dev
-uv run spider-doctor-worker --once
-uv run spider-doctor-worker
+docker compose down
 ```
 
 ## Task lifecycle
 
+Creation and repair tasks are written by `spider-executor`. Doctor consumes the authoritative `entry_id`, `base_release`, entry record, and source run record from MongoDB.
+
 ```text
 queued -> running (lease token + attempt)
-       -> candidate SHA persisted -> pushed -> succeeded
+       -> candidate SHA persisted -> pushed -> succeeded(result.commit_sha)
        -> queued (bounded retry after operational failure)
        -> exhausted (attempt budget consumed)
 ```
 
-Completion and failure transitions require the current lease token. Expired final attempts become exhausted. Existing executor revisions must populate `priority`, `attempts`, `max_attempts`, `available_at`, and `lease` when creating Doctor tasks.
+Completion and failure transitions require the current lease token. A persisted candidate remains reclaimable after lease expiry or process restart, including after the generation attempt budget is consumed.
 
-## Tests
+## Development verification
 
 ```bash
+uv sync --frozen --dev
 uv run pytest
+uv run ruff check src tests scripts
 ```
-
-The test suite covers atomic leasing, stale completion fencing, retry/exhaustion, scoped Mongo evidence, pinned images, hardened Docker arguments, bounded process output, timeout cleanup, exact-SHA workspaces, path allowlisting, and worker completion.

@@ -44,6 +44,7 @@ def create_worker(settings: Settings) -> DoctorWorker:
                 proxy_token_file=settings.proxy_token_file,
                 docker_binary=settings.docker_binary,
                 network=settings.docker_network,
+                egress_proxy_url=settings.egress_proxy_url,
                 timeout_seconds=settings.agent_timeout_seconds,
                 max_turns=settings.agent_max_turns,
             )
