@@ -65,6 +65,28 @@ class MongoDoctorTaskRepository:
     ) -> DoctorTask | None:
         now = now or datetime.now(UTC)
         eligible = self._eligible
+        # A commit already recorded in result is durable proof that publication
+        # completed. Reconcile stale queued/running state before considering any
+        # work so a published candidate can never be replayed indefinitely.
+        self.collection.update_many(
+            {
+                "status": {
+                    "$in": [str(DoctorStatus.QUEUED), str(DoctorStatus.RUNNING)]
+                },
+                "candidate_sha": {"$type": "string"},
+                "result.commit_sha": {"$type": "string"},
+                "$expr": {"$eq": ["$candidate_sha", "$result.commit_sha"]},
+                **eligible,
+            },
+            {
+                "$set": {
+                    "status": str(DoctorStatus.SUCCEEDED),
+                    "lease": None,
+                    "updated_at": now,
+                },
+                "$unset": {"active_key": ""},
+            },
+        )
         self.collection.update_many(
             {
                 "status": str(DoctorStatus.RUNNING),
@@ -89,15 +111,22 @@ class MongoDoctorTaskRepository:
         token = str(uuid4())
         candidate = self.collection.find_one_and_update(
             {
-                "candidate_sha": {"$type": "string"},
-                "$or": [
-                    {"status": str(DoctorStatus.QUEUED), "available_at": {"$lte": now}},
+                "$and": [
+                    {"candidate_sha": {"$type": "string"}},
                     {
-                        "status": str(DoctorStatus.RUNNING),
-                        "lease.expires_at": {"$lte": now},
+                        "$or": [
+                            {
+                                "status": str(DoctorStatus.QUEUED),
+                                "available_at": {"$lte": now},
+                            },
+                            {
+                                "status": str(DoctorStatus.RUNNING),
+                                "lease.expires_at": {"$lte": now},
+                            },
+                        ]
                     },
+                    eligible,
                 ],
-                **eligible,
             },
             {
                 "$set": {

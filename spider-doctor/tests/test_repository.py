@@ -101,6 +101,35 @@ def test_candidate_is_durable_before_publication_and_completion_is_fenced() -> N
     assert "active_key" not in completed
 
 
+def test_claim_reconciles_already_published_candidate_without_reprocessing() -> None:
+    collection = mongomock.MongoClient().spider.doctor_tasks
+    document = queued_task("published")
+    document.update(
+        {
+            "status": "running",
+            "attempts": 1,
+            "candidate_sha": "a" * 40,
+            "candidate_result": {"status": "awaiting_review", "summary": "verified"},
+            "result": {"status": "awaiting_review", "commit_sha": "a" * 40},
+            "lease": {
+                "worker_id": "doctor-old",
+                "token": "old-token",
+                "expires_at": datetime.now(UTC) + timedelta(minutes=30),
+            },
+        }
+    )
+    collection.insert_one(document)
+    repo = MongoDoctorTaskRepository(collection)
+
+    assert repo.claim("doctor-new") is None
+
+    reconciled = collection.find_one({"_id": "published"})
+    assert reconciled is not None
+    assert reconciled["status"] == "succeeded"
+    assert reconciled["lease"] is None
+    assert "active_key" not in reconciled
+
+
 def test_expired_final_attempt_becomes_exhausted() -> None:
     collection = mongomock.MongoClient().spider.doctor_tasks
     collection.insert_one(queued_task("task", max_attempts=1))
