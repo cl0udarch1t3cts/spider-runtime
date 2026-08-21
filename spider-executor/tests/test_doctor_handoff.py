@@ -17,7 +17,19 @@ def test_succeeded_doctor_task_handoff_updates_revision_and_schedules_execution(
     registration = service.register("business-123", "Example AG", "Bern")
     service.db.doctor_tasks.update_one(
         {"_id": registration["task_id"]},
-        {"$set": {"status": "succeeded", "result": {"commit_sha": COMMIT_SHA}}},
+        {
+            "$set": {
+                "status": "succeeded",
+                "result": {
+                    "commit_sha": COMMIT_SHA,
+                    "metadata": {
+                        "website": "https://example.com/contact",
+                        "extracted_fields": ["NAME", "DESCRIPTION"],
+                        "null_fields": ["EMAIL", "OPENING_HOURS"],
+                    },
+                },
+            }
+        },
     )
 
     first = service.consume_doctor_handoff(registration["task_id"])
@@ -29,7 +41,14 @@ def test_succeeded_doctor_task_handoff_updates_revision_and_schedules_execution(
     assert first.entry_id == "business-123"
     assert first.scraper_release == COMMIT_SHA
     assert provisioned == [COMMIT_SHA]
-    assert service.get_entry("business-123").scraper_release == COMMIT_SHA
+    entry = service.get_entry("business-123")
+    assert entry is not None
+    assert entry.scraper_release == COMMIT_SHA
+    assert entry.website == "https://example.com/contact"
+    assert entry.validation.required_fields == ["NAME", "DESCRIPTION"]
+    assert entry.validation.allowed_null_fields == ["EMAIL", "OPENING_HOURS"]
+    assert entry.validation.minimum_non_null_fields == 2
+    assert entry.validation.allowed_source_hosts == ["example.com"]
     task = service.db.doctor_tasks.find_one({"_id": registration["task_id"]})
     assert task["handoff_job_id"] == first.id
     assert service.db.execution_jobs.count_documents({"entry_id": "business-123"}) == 1

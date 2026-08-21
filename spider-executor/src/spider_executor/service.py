@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from pymongo import ASCENDING, DESCENDING
@@ -40,6 +41,41 @@ def _decode(model_type, document: dict | None, *, id_field: bool = False):
     else:
         data.pop("_id", None)
     return model_type.model_validate(data)
+
+
+def _doctor_entry_contract(result: dict) -> dict:
+    metadata = result.get("metadata")
+    if metadata is None:
+        return {}
+    if not isinstance(metadata, dict):
+        raise RuntimeError("Doctor result metadata must be an object")
+    website = metadata.get("website")
+    extracted = metadata.get("extracted_fields")
+    null_fields = metadata.get("null_fields")
+    parsed = urlparse(website) if isinstance(website, str) else None
+    if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise RuntimeError("Doctor result metadata must contain an absolute website URL")
+    if not isinstance(extracted, list) or not isinstance(null_fields, list):
+        raise RuntimeError("Doctor result metadata must contain extracted_fields and null_fields")
+    field_name = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
+    if (
+        not extracted
+        or any(not isinstance(value, str) or not field_name.fullmatch(value) for value in extracted)
+        or any(not isinstance(value, str) or not field_name.fullmatch(value) for value in null_fields)
+        or len(extracted) != len(set(extracted))
+        or len(null_fields) != len(set(null_fields))
+        or set(extracted) & set(null_fields)
+    ):
+        raise RuntimeError("Doctor result field contract is invalid")
+    return {
+        "website": website,
+        "validation": {
+            "required_fields": extracted,
+            "allowed_null_fields": null_fields,
+            "minimum_non_null_fields": len(extracted),
+            "allowed_source_hosts": [parsed.hostname.lower()],
+        },
+    }
 
 
 class MongoControlService:
@@ -174,9 +210,11 @@ class MongoControlService:
             return None
         if task.get("handoff_job_id"):
             return self.get_job(str(task["handoff_job_id"]))
-        commit_sha = (task.get("result") or {}).get("commit_sha")
+        result = task.get("result") or {}
+        commit_sha = result.get("commit_sha")
         if not isinstance(commit_sha, str) or re.fullmatch(r"[0-9a-fA-F]{40}", commit_sha) is None:
             return None
+        entry_contract = _doctor_entry_contract(result)
         commit_sha = commit_sha.lower()
         entry_id = task["entry_id"]
         activation = self.db.runtime_state.find_one({"_id": "activated_entry"})
@@ -198,15 +236,23 @@ class MongoControlService:
                 return None
             if task.get("handoff_job_id"):
                 return self.get_job(str(task["handoff_job_id"]))
-            persisted_sha = (task.get("result") or {}).get("commit_sha")
+            persisted_result = task.get("result") or {}
+            persisted_sha = persisted_result.get("commit_sha")
             if not isinstance(persisted_sha, str) or persisted_sha.lower() != commit_sha:
                 return None
+            if _doctor_entry_contract(persisted_result) != entry_contract:
+                raise RuntimeError("Doctor result metadata changed during handoff")
             activation = self.db.runtime_state.find_one({"_id": "activated_entry"}, **kwargs)
             if activation is not None and activation.get("entry_id") != entry_id:
                 raise RuntimeError("prototype supports only one activated entry")
+            entry_updates = {
+                "scraper_release": commit_sha,
+                "updated_at": datetime.now(UTC),
+                **entry_contract,
+            }
             if self.db.entries.update_one(
                 {"_id": entry_id},
-                {"$set": {"scraper_release": commit_sha, "updated_at": datetime.now(UTC)}},
+                {"$set": entry_updates},
                 **kwargs,
             ).matched_count != 1:
                 return None
