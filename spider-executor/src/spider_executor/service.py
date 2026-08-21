@@ -155,6 +155,27 @@ class MongoControlService:
         active_key = entry_id
         with self._transaction() as session:
             kwargs = self._session_kwargs(session)
+            existing_entry = self.db.entries.find_one(
+                {"_id": entry_id},
+                {"businessname": 1, "address": 1},
+                **kwargs,
+            )
+            identity_changed = existing_entry is not None and (
+                existing_entry.get("businessname") != businessname
+                or existing_entry.get("address") != address
+            )
+            active_task = self.db.doctor_tasks.find_one(
+                {"active_key": active_key},
+                {"type": 1, "status": 1},
+                **kwargs,
+            )
+            if identity_changed and active_task is not None and (
+                active_task.get("type") != "create"
+                or active_task.get("status") != "queued"
+            ):
+                raise RuntimeError(
+                    "cannot correct registration while a non-queued create task is active"
+                )
             self.db.entries.update_one(
                 {"_id": entry_id},
                 {
@@ -194,6 +215,30 @@ class MongoControlService:
                 upsert=True,
                 **kwargs,
             )
+            if identity_changed and active_task is not None:
+                self.db.doctor_tasks.update_one(
+                    {"active_key": active_key, "type": "create", "status": "queued"},
+                    {
+                        "$set": {
+                            "base_release": base_release,
+                            "attempts": 0,
+                            "max_attempts": 2,
+                            "available_at": now,
+                            "lease": None,
+                            "updated_at": now,
+                            "source_run_id": None,
+                            "failure_class": None,
+                            "errors": [],
+                        },
+                        "$unset": {
+                            "last_error": "",
+                            "candidate_sha": "",
+                            "candidate_result": "",
+                            "result": "",
+                        },
+                    },
+                    **kwargs,
+                )
             task = self.db.doctor_tasks.find_one({"active_key": active_key}, **kwargs)
             if task is None:  # Defensive: the upsert and read share one transaction.
                 raise RuntimeError("registered Doctor task could not be loaded")

@@ -23,6 +23,17 @@ def test_register_upserts_entry_and_deduplicates_create_task() -> None:
     service.ensure_indexes()
 
     first = service.register("business-123", "Example AG", "Bern")
+    service.db.doctor_tasks.update_one(
+        {"_id": first["task_id"]},
+        {
+            "$set": {
+                "attempts": 1,
+                "available_at": "later",
+                "last_error": "identity mismatch",
+                "errors": ["identity mismatch"],
+            }
+        },
+    )
     second = service.register("business-123", "Example AG Updated", "Zurich")
 
     assert first["task_id"] == second["task_id"]
@@ -47,7 +58,47 @@ def test_register_upserts_entry_and_deduplicates_create_task() -> None:
     assert tasks[0]["status"] == "queued"
     assert tasks[0]["active_key"] == "business-123"
     assert tasks[0]["base_release"] == "b" * 40
+    assert tasks[0]["attempts"] == 0
+    assert tasks[0]["lease"] is None
+    assert tasks[0]["errors"] == []
+    assert "last_error" not in tasks[0]
+    assert tasks[0]["available_at"] != "later"
     assert "slug" not in tasks[0]
+
+
+def test_identical_reregistration_does_not_reset_create_attempts() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+    service.ensure_indexes()
+    first = service.register("business-123", "Example AG", "Bern")
+    service.db.doctor_tasks.update_one(
+        {"_id": first["task_id"]},
+        {"$set": {"attempts": 1, "last_error": "discovery failed"}},
+    )
+
+    second = service.register("business-123", "Example AG", "Bern")
+
+    task = service.db.doctor_tasks.find_one({"_id": second["task_id"]})
+    assert task is not None
+    assert task["attempts"] == 1
+    assert task["last_error"] == "discovery failed"
+
+
+def test_registration_correction_fails_closed_while_task_is_running() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+    service.ensure_indexes()
+    first = service.register("business-123", "Example AG", "Bern")
+    service.db.doctor_tasks.update_one(
+        {"_id": first["task_id"]},
+        {"$set": {"status": "running"}},
+    )
+
+    with pytest.raises(RuntimeError, match="non-queued create task"):
+        service.register("business-123", "Corrected AG", "Zurich")
+
+    entry = service.get_entry("business-123")
+    assert entry is not None
+    assert entry.businessname == "Example AG"
+    assert entry.address == "Bern"
 
 
 def test_execution_enqueue_fails_closed_for_non_active_prototype_entry() -> None:
