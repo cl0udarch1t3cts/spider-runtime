@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     volumes:
       - mongo-data:/data/db
+    ports:
+      - "127.0.0.1:27017:27017"
     networks: [control]
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]

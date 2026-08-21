@@ -6,6 +6,14 @@ from spider_executor.settings import Settings
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_mongodb_is_published_only_on_host_loopback() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text()
+
+    assert '      - "127.0.0.1:27017:27017"' in compose
+    assert '      - "27017:27017"' not in compose
+    assert '      - "0.0.0.0:27017:27017"' not in compose
+
+
 def test_runtime_volumes_are_initialized_for_the_runtime_user() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
 
