@@ -6,7 +6,7 @@ This tutorial deploys the complete Spider platform on one Ubuntu VM:
 - MongoDB: durable registrations, tasks, execution state, and scraped records
 - Spider Doctor: creates and repairs deterministic scrapers with stock Hermes/Codex
 - `spider-scripts`: authoritative scraper source repository
-- `spider-docs`: architecture, operations, and bulk-registration commands
+- `spider-devops`: architecture, operations, and bulk-registration commands
 
 The commands assume:
 
@@ -120,13 +120,13 @@ cd /home/spider/projects
 git clone git@github.com:cl0udarch1t3cts/spider-scripts.git
 git clone git@github.com:cl0udarch1t3cts/spider-executor.git
 git clone git@github.com:cl0udarch1t3cts/spider-doctor.git
-git clone git@github.com:cl0udarch1t3cts/spider-docs.git
+git clone git@github.com:cl0udarch1t3cts/spider-devops.git
 ```
 
 Verify all checkouts:
 
 ```bash
-for repo in spider-scripts spider-executor spider-doctor spider-docs; do
+for repo in spider-scripts spider-executor spider-doctor spider-devops; do
   git -C "/home/spider/projects/$repo" status --short --branch
 done
 ```
@@ -460,7 +460,7 @@ Executor then consumes the succeeded Doctor handoff, provisions the exact commit
 After the canary succeeds, open:
 
 ```text
-/home/spider/projects/spider-docs/TODO.md
+/home/spider/projects/spider-devops/TODO.md
 ```
 
 Each checklist item contains a shell-safe `curl` using a quoted JSON heredoc. Run one request at a time initially and verify the returned task ID before moving to a larger batch.
@@ -612,7 +612,7 @@ docker compose ps -a
 python3 scripts/preflight.py
 
 # Repositories
-for repo in spider-scripts spider-executor spider-doctor spider-docs; do
+for repo in spider-scripts spider-executor spider-doctor spider-devops; do
   git -C "/home/spider/projects/$repo" status --short --branch
 done
 ```
