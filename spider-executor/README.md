@@ -70,7 +70,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/execution-jobs \
   }'
 ```
 
-The executor stores successful extracted records in MongoDB. `spider-output` is not part of the production flow.
+The executor stores successful extracted records in MongoDB.
 
 Manual enqueue returns `409 Conflict` until the entry has an activated scraper release. This initial prototype activates only one entry and fails closed if work targets another entry. Activation/release mismatches are control-plane failures and never create Doctor repair work.
 
