@@ -114,17 +114,60 @@ class TrustedGitPublisher:
             raise RuntimeError("could not reconcile candidate against publication branch")
         return contains.returncode == 0
 
-    def publish(self, workspace: Path, candidate_sha: str) -> None:
+    def publish(self, workspace: Path, candidate_sha: str) -> str:
         if self.is_published(workspace, candidate_sha):
-            return
+            return candidate_sha
+        remote_ref = f"refs/remotes/{self.remote}/{self.branch}"
+        behind = self._run(
+            workspace,
+            "merge-base",
+            "--is-ancestor",
+            remote_ref,
+            candidate_sha,
+            check=False,
+        )
+        if behind.returncode not in (0, 1):
+            raise RuntimeError("could not compare candidate against publication branch")
+        sha_to_push = candidate_sha
+        if behind.returncode == 1:
+            sha_to_push = self._rebase_candidate(workspace, candidate_sha, remote_ref)
         pushed = self._run(
             workspace,
             "push",
             self.remote,
-            f"{candidate_sha}:refs/heads/{self.branch}",
+            f"{sha_to_push}:refs/heads/{self.branch}",
             check=False,
         )
         if pushed.returncode != 0:
             raise RuntimeError(f"Git publication failed: {pushed.stderr[-1000:]}")
-        if not self.is_published(workspace, candidate_sha):
+        if not self.is_published(workspace, sha_to_push):
             raise RuntimeError("candidate is not reachable from the authoritative branch after push")
+        return sha_to_push
+
+    def _rebase_candidate(self, workspace: Path, candidate_sha: str, remote_ref: str) -> str:
+        # The publication branch advanced while this candidate was in flight
+        # (e.g. a concurrent Doctor won the race). Replay the single candidate
+        # commit onto the current tip so publication stays fast-forward.
+        rebased = self._run(
+            workspace,
+            "-c",
+            f"user.name={self.author_name}",
+            "-c",
+            f"user.email={self.author_email}",
+            "rebase",
+            "--onto",
+            remote_ref,
+            f"{candidate_sha}^",
+            candidate_sha,
+            check=False,
+        )
+        if rebased.returncode != 0:
+            self._run(workspace, "rebase", "--abort", check=False)
+            self._run(workspace, "checkout", "--quiet", "--detach", candidate_sha, check=False)
+            raise RuntimeError(
+                f"candidate could not be rebased onto {self.branch}: {rebased.stderr[-1000:]}"
+            )
+        new_sha = self._run(workspace, "rev-parse", "HEAD").stdout.strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", new_sha):
+            raise RuntimeError("rebased candidate did not resolve to a full SHA")
+        return new_sha

@@ -52,6 +52,46 @@ def test_candidate_creation_fails_if_validated_list_omits_a_change(tmp_path: Pat
         publisher.create_candidate(workspace, ["allowed"], "Doctor repair Entry_1")
 
 
+def advance_remote(tmp_path: Path, remote: Path, filename: str, content: str) -> None:
+    other = tmp_path / f"other-{filename}"
+    git(tmp_path, "clone", "-q", str(remote), str(other))
+    (other / filename).write_text(content)
+    git(other, "add", filename)
+    git(other, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit", "-qm", "concurrent")
+    git(other, "push", "-q", "origin", "HEAD:main")
+
+
+def test_publish_rebases_stale_candidate_onto_advanced_remote(tmp_path: Path) -> None:
+    workspace, remote = repositories(tmp_path)
+    scraper = workspace / "scrapers" / "Entry_1"
+    scraper.mkdir(parents=True)
+    (scraper / "scrape.py").write_text("pass\n")
+    publisher = TrustedGitPublisher(branch="main", author_name="Doctor", author_email="doctor@example.com")
+    candidate = publisher.create_candidate(workspace, ["scrapers/Entry_1/scrape.py"], "Doctor create Entry_1")
+    advance_remote(tmp_path, remote, "concurrent.txt", "someone else won the race\n")
+
+    published = publisher.publish(workspace, candidate)
+
+    assert published != candidate
+    assert git(remote, "rev-parse", "refs/heads/main") == published
+    assert git(workspace, "show", f"{published}:scrapers/Entry_1/scrape.py") == "pass"
+    assert git(workspace, "show", f"{published}:concurrent.txt") == "someone else won the race"
+
+
+def test_publish_conflicting_rebase_fails_and_restores_candidate(tmp_path: Path) -> None:
+    workspace, remote = repositories(tmp_path)
+    (workspace / "AGENTS.md").write_text("candidate version\n")
+    publisher = TrustedGitPublisher(branch="main", author_name="Doctor", author_email="doctor@example.com")
+    candidate = publisher.create_candidate(workspace, ["AGENTS.md"], "Doctor repair Entry_1")
+    advance_remote(tmp_path, remote, "AGENTS.md", "conflicting concurrent version\n")
+
+    with pytest.raises(RuntimeError, match="could not be rebased"):
+        publisher.publish(workspace, candidate)
+
+    assert git(workspace, "rev-parse", "HEAD") == candidate
+    assert git(workspace, "status", "--porcelain") == ""
+
+
 def test_reconciliation_accepts_candidate_contained_in_later_remote_tip(tmp_path: Path) -> None:
     workspace, _ = repositories(tmp_path)
     (workspace / "first").write_text("one")

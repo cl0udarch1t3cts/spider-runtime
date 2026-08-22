@@ -101,6 +101,19 @@ def test_candidate_is_durable_before_publication_and_completion_is_fenced() -> N
     assert "active_key" not in completed
 
 
+def test_valid_lease_can_replace_candidate_with_rebased_sha() -> None:
+    collection = mongomock.MongoClient().spider.doctor_tasks
+    collection.insert_one(queued_task("task"))
+    repo = MongoDoctorTaskRepository(collection)
+    claimed = repo.claim("doctor-1")
+    result = {"summary": "verified"}
+
+    assert repo.record_candidate(claimed.id, claimed.lease.token, "a" * 40, result)
+    assert repo.record_candidate(claimed.id, claimed.lease.token, "b" * 40, result)
+    assert collection.find_one({"_id": claimed.id})["candidate_sha"] == "b" * 40
+    assert repo.complete_publication(claimed.id, claimed.lease.token, "b" * 40)
+
+
 def test_claim_reconciles_already_published_candidate_without_reprocessing() -> None:
     collection = mongomock.MongoClient().spider.doctor_tasks
     document = queued_task("published")

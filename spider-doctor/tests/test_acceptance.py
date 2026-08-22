@@ -33,7 +33,7 @@ class PublishingStub:
         return "c" * 40
 
     def publish(self, workspace, candidate_sha):
-        return None
+        return candidate_sha
 
 
 def test_repair_task_vertical_slice_reaches_awaiting_review(tmp_path: Path) -> None:

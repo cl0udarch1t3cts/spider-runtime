@@ -78,10 +78,17 @@ class DoctorWorker:
         try:
             if task.candidate_sha:
                 workspace = self.workspace_manager.resume(task.id, task.candidate_sha)
-                self.publisher.publish(workspace, task.candidate_sha)
-                if not self.repository.complete_publication(task.id, task.lease.token, task.candidate_sha):
-                    raise RuntimeError("Doctor task lease was lost before publication completion")
                 payload = task.candidate_result or {}
+                published_sha = self.publisher.publish(workspace, task.candidate_sha)
+                if published_sha != task.candidate_sha and not self.repository.record_candidate(
+                    task.id,
+                    task.lease.token,
+                    published_sha,
+                    payload,
+                ):
+                    raise RuntimeError("Doctor task lease was lost before candidate persistence")
+                if not self.repository.complete_publication(task.id, task.lease.token, published_sha):
+                    raise RuntimeError("Doctor task lease was lost before publication completion")
                 return DoctorResult.model_validate(payload)
 
             evidence = self.evidence_loader.load(task)
@@ -126,8 +133,15 @@ class DoctorWorker:
                 result_payload,
             ):
                 raise RuntimeError("Doctor task lease was lost before candidate persistence")
-            self.publisher.publish(workspace, candidate_sha)
-            if not self.repository.complete_publication(task.id, task.lease.token, candidate_sha):
+            published_sha = self.publisher.publish(workspace, candidate_sha)
+            if published_sha != candidate_sha and not self.repository.record_candidate(
+                task.id,
+                task.lease.token,
+                published_sha,
+                result_payload,
+            ):
+                raise RuntimeError("Doctor task lease was lost before candidate persistence")
+            if not self.repository.complete_publication(task.id, task.lease.token, published_sha):
                 raise RuntimeError("Doctor task lease was lost before publication completion")
             return result
         except Exception as exc:

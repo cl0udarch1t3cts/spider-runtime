@@ -43,21 +43,26 @@ def test_validates_only_task_scoped_changes(tmp_path: Path) -> None:
 
     assert manager.validate_changes(workspace, "example") == ["scrapers/example/new.py"]
 
-    (workspace / "pyproject.toml").write_text("malicious")
+    (workspace / "AGENTS.md").write_text("malicious edit of a tracked file")
     with pytest.raises(ValueError, match="outside the Doctor allowlist"):
         manager.validate_changes(workspace, "example")
 
 
-def test_rejects_fixture_for_unrelated_entry(tmp_path: Path) -> None:
+def test_discards_untracked_scratch_files_outside_allowlist(tmp_path: Path) -> None:
     source, release = origin(tmp_path)
     manager = GitWorkspace(source, tmp_path / "work")
     workspace = manager.prepare("task-1", release)
+    (workspace / "scrapers" / "example" / "new.py").write_text("pass\n")
+    scratch = workspace / ".tmp"
+    scratch.mkdir()
+    (scratch / "dean_ch_de.html").write_text("<html>cached page</html>")
     fixtures = workspace / "tests" / "fixtures"
     fixtures.mkdir(parents=True)
     (fixtures / "other-place_home.html").write_text("unrelated")
 
-    with pytest.raises(ValueError, match="outside the Doctor allowlist"):
-        manager.validate_changes(workspace, "example")
+    assert manager.validate_changes(workspace, "example") == ["scrapers/example/new.py"]
+    assert not (scratch / "dean_ch_de.html").exists()
+    assert not (fixtures / "other-place_home.html").exists()
 
 
 def test_accepts_fixture_directory_scoped_to_entry_id(tmp_path: Path) -> None:
@@ -113,6 +118,21 @@ def test_rejects_workspace_whose_head_changed_after_prepare(tmp_path: Path) -> N
 
     with pytest.raises(ValueError, match="HEAD changed"):
         manager.validate_changes(workspace, "example")
+
+
+def test_resume_restores_workspace_head_to_recorded_candidate(tmp_path: Path) -> None:
+    source, release = origin(tmp_path)
+    manager = GitWorkspace(source, tmp_path / "work")
+    workspace = manager.prepare("task-1", release)
+    (workspace / "scrapers" / "example" / "new.py").write_text("pass\n")
+    git(workspace, "add", "scrapers/example/new.py")
+    git(workspace, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "candidate")
+    candidate = git(workspace, "rev-parse", "HEAD")
+    git(workspace, "checkout", "--quiet", "--detach", release)
+
+    resumed = manager.resume("task-1", candidate)
+
+    assert git(resumed, "rev-parse", "HEAD") == candidate
 
 
 def test_accepts_unstaged_modification_of_tracked_scraper(tmp_path: Path) -> None:

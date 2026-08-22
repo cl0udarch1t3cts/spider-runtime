@@ -66,6 +66,7 @@ class FakePublisher:
 
     def publish(self, workspace, candidate_sha):
         assert candidate_sha == self.candidate_sha
+        return candidate_sha
 
 
 def running_task() -> DoctorTask:
@@ -105,6 +106,36 @@ def test_process_one_launches_ephemeral_agent_and_fences_completion(tmp_path: Pa
     assert repository.published == ("task-1", "token", "c" * 40)
     assert (tmp_path / "tasks" / "task-1" / "task.json").is_file()
     assert (tmp_path / "tasks" / "task-1" / "result-schema.json").is_file()
+
+
+def test_resume_records_rebased_sha_before_completing_publication(tmp_path: Path) -> None:
+    class RebasingPublisher:
+        def create_candidate(self, workspace, validated_files, message):
+            raise AssertionError("resume must not create a new candidate")
+
+        def publish(self, workspace, candidate_sha):
+            assert candidate_sha == "c" * 40
+            return "d" * 40
+
+    task = running_task()
+    task.candidate_sha = "c" * 40
+    task.candidate_result = {"status": "awaiting_review", "summary": "fixed"}
+    repository = FakeRepository(task)
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        FakeLauncher(),
+        RebasingPublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+    )
+
+    result = worker.process_one()
+
+    assert result.status == DoctorStatus.AWAITING_REVIEW
+    assert repository.candidate[0:3] == ("task-1", "token", "d" * 40)
+    assert repository.published == ("task-1", "token", "d" * 40)
 
 
 def test_process_one_returns_none_when_queue_is_empty(tmp_path: Path) -> None:

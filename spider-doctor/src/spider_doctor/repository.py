@@ -191,16 +191,15 @@ class MongoDoctorTaskRepository:
         if not re.fullmatch(r"[0-9a-f]{40}", candidate_sha):
             raise ValueError("candidate SHA must be a full Git SHA")
         now = now or datetime.now(UTC)
+        # A valid lease may replace an earlier candidate_sha: publication rebases
+        # a stale candidate onto the moved branch tip, which produces a new SHA
+        # for the same validated patch.
         outcome = self.collection.update_one(
             {
                 "_id": task_id,
                 "status": str(DoctorStatus.RUNNING),
                 "lease.token": lease_token,
                 "lease.expires_at": {"$gt": now},
-                "$or": [
-                    {"candidate_sha": {"$exists": False}},
-                    {"candidate_sha": candidate_sha},
-                ],
             },
             {
                 "$set": {

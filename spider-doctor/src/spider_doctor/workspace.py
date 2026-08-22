@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import stat
 import subprocess
 from pathlib import Path, PurePosixPath
 from typing import ClassVar
+
+logger = logging.getLogger(__name__)
 
 
 class GitWorkspace:
@@ -80,7 +83,20 @@ class GitWorkspace:
         if not workspace.is_dir() or not (workspace / ".git").is_dir():
             raise RuntimeError("persisted Doctor candidate workspace is unavailable")
         if self._run(workspace, "rev-parse", "HEAD") != candidate_sha:
-            raise RuntimeError("persisted Doctor candidate workspace does not match candidate SHA")
+            # A crash between a publication rebase and candidate persistence can
+            # leave HEAD on an unrecorded SHA (or mid-rebase). The recorded
+            # candidate commit is still in the object store; restore it.
+            subprocess.run(
+                ["git", "rebase", "--abort"],
+                cwd=workspace,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            self._run(workspace, "checkout", "--quiet", "--detach", candidate_sha)
+            if self._run(workspace, "rev-parse", "HEAD") != candidate_sha:
+                raise RuntimeError("persisted Doctor candidate workspace does not match candidate SHA")
         return workspace
 
     def validate_changes(self, workspace: Path, entry_id: str) -> list[str]:
@@ -94,6 +110,7 @@ class GitWorkspace:
             raise ValueError("unsafe entry_id")
         output = self._run_raw(workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all")
         changed: list[str] = []
+        discarded: list[str] = []
         for entry in output.split("\0"):
             if not entry:
                 continue
@@ -111,13 +128,20 @@ class GitWorkspace:
                 or fixture_allowed
             )
             candidate = workspace / Path(*path.parts)
-            disk_path = candidate.resolve()
-            if (
-                path.is_absolute()
-                or ".." in path.parts
-                or not disk_path.is_relative_to(workspace.resolve())
-                or not allowed
-            ):
+            safe = (
+                not path.is_absolute()
+                and ".." not in path.parts
+                and candidate.parent.resolve().is_relative_to(workspace)
+            )
+            if safe and not allowed and status_code == "??":
+                # Hermes routinely leaves scratch output (page caches, downloads)
+                # in the workspace. Untracked files can never reach publication,
+                # so discard them instead of failing the whole attempt; edits to
+                # tracked files outside the allowlist still fail below.
+                candidate.unlink(missing_ok=True)
+                discarded.append(name)
+                continue
+            if not safe or not candidate.resolve().is_relative_to(workspace) or not allowed:
                 raise ValueError(f"changed file is outside the Doctor allowlist: {name}")
             if candidate.exists() or candidate.is_symlink():
                 metadata = candidate.lstat()
@@ -128,4 +152,10 @@ class GitWorkspace:
             changed.append(path.as_posix())
             if len(changed) > 1000:
                 raise ValueError("Doctor patch changes too many files")
+        if discarded:
+            logger.warning(
+                "discarded %d untracked scratch file(s) outside the Doctor allowlist: %s",
+                len(discarded),
+                ", ".join(sorted(discarded)[:20]),
+            )
         return sorted(changed)
