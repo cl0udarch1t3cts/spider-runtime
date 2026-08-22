@@ -133,6 +133,8 @@ flowchart TB
     subgraph Doctor[Spider Doctor]
         TC[Task consumer]
         CA[Codex adapter]
+        CB[Codex broker]
+        EP[Egress proxy]
         SB[Scraper builder/repairer]
         VF[Verifier]
         GP[Git publisher]
@@ -141,6 +143,7 @@ flowchart TB
     M[(MongoDB)]
     G[(spider-scripts)]
     WEB[Business website]
+    OAI[Codex subscription backend]
 
     RA --> M
     RA --> DT
@@ -149,16 +152,23 @@ flowchart TB
     DT --> TC
     TC --> M
     TC --> CA
+    CA --> CB
+    CB --> OAI
     CA --> SB
-    SB --> WEB
+    SB --> EP
     SB --> VF
-    VF --> WEB
+    VF --> EP
+    EP --> WEB
     VF --> GP
     GP --> G
     PR --> G
     PR --> RE
     RE --> WEB
 ```
+
+The Codex broker and the egress proxy are the two boundary components of the
+Doctor's task sandbox: the builder/repairer (the Hermes task container) reaches
+the model only through the broker and the web only through the egress proxy.
 
 ### 5.2 `spider-executor`
 
@@ -221,6 +231,25 @@ The exact endpoint path and status-query API remain implementation decisions.
 - Invokes the official Codex CLI using a dedicated subscription login.
 - Supplies fixed project instructions and task context.
 - Does not expose a general prompt API.
+- Reaches the model exclusively through the Codex broker; the task container never holds upstream credentials.
+
+#### Codex broker
+
+The broker exists so that the Hermes task container — which runs LLM-driven,
+partly untrusted activity (fetching arbitrary websites, executing generated
+code) — never holds the Codex subscription OAuth credentials.
+
+- Holds the subscription OAuth credentials in its own volume; they are never mounted into the task container.
+- Task containers authenticate with a broker-local client token (constant-time compared) that is meaningful only on the internal task network — worthless if exfiltrated.
+- Enforces policy before forwarding a request upstream: exactly one allowed model, bounded concurrent requests, a per-minute rate limit, and a request size cap. A runaway agent loop hits the broker's limits, not the subscription's.
+- Refreshes the OAuth session centrally and reports authentication health through a readiness endpoint — the single place to monitor subscription-auth expiry (the operational risk noted in section 10).
+- Is the single auditable chokepoint for all LLM traffic; it also stamps the upstream-required client headers.
+
+#### Egress proxy
+
+- Terminates all general web egress from the Hermes task container.
+- Allows public HTTP/HTTPS only; blocks private and link-local address ranges (host network, cloud metadata, executor control plane).
+- Together with the broker, restricts the task container to exactly two reachable classes of destination: public business websites and the one allowed model.
 
 #### Scraper builder/repairer
 
@@ -390,6 +419,8 @@ flowchart LR
         E[spider-executor]
         D[Spider Doctor]
         C[Codex CLI]
+        B[Codex broker]
+        P[Egress proxy]
         R[(spider-scripts checkout)]
     end
 
@@ -402,19 +433,22 @@ flowchart LR
     E --> D
     D <--> M
     D --> C
-    C --> OAI
+    C --> B
+    B --> OAI
+    D --> P
+    P --> WEB
     D --> R
     R <--> GH
     E --> R
     E --> WEB
-    D --> WEB
 ```
 
 The exact choice between containers and host services is not fixed by this document. The security boundaries must remain the same:
 
 - Executor has production MongoDB result-write capability and read/provision access to scraper code.
 - Doctor has task access and Git write capability, but should not receive broad production data-write privileges.
-- Codex authentication is dedicated to Doctor and persisted separately from Hermes.
+- Codex authentication is dedicated to Doctor and persisted only in the Codex broker, never in the Hermes task container; task containers hold only a broker-local client token.
+- The Hermes task container reaches the web only through the egress proxy (public HTTP/HTTPS, internal ranges blocked) and the model only through the broker.
 - Executor must not expose Doctor as a general LLM endpoint.
 - Management interfaces should remain loopback-only or on a restricted internal network.
 - The Docker socket must not be mounted into Doctor.
@@ -456,6 +490,7 @@ A lease/heartbeat may be added so abandoned `running` tasks can safely return to
 - Treat all registered names, addresses, website content, failure messages, and repository files as untrusted data when constructing Codex instructions.
 - Bound task and failure-context sizes.
 - Never place OAuth tokens, database credentials, or Git credentials in prompts, logs, commits, fixtures, or MongoDB task results.
+- LLM access is mediated by the Codex broker: credential isolation from the task container, a single allowed model, and rate/concurrency/size limits (see section 5.3).
 - Doctor's Git credential should be limited to the `spider-scripts` repository.
 - Executor's Git credential should be read-only.
 - Restrict Doctor changes by path and reject symlinks or unrelated modifications.
