@@ -27,7 +27,7 @@ Run these commands on `spider-01`. Each request is asynchronous and creates or r
   {
     "entry_id": "OWjbydCNXagwj8ikDHALuw",
     "businessname": "Piazza",
-    "address": "Anwandstrasse 28, 8004 Zürich"
+    "address": "Idaplatz 2, 8003 Zürich"
   }
   JSON
   ```
@@ -716,7 +716,7 @@ Run these commands on `spider-01`. Each request is asynchronous and creates or r
     -H 'content-type: application/json' \
     --data-binary @- <<'JSON'
   {
-    "entry_id": "3yC74CRNya zk7I3_umEFtA",
+    "entry_id": "3yC74CRNyazk7I3_umEFtA",
     "businessname": "dean & david ZH Wiesenstrasse",
     "address": "Wiesenstrasse 1, 8008 Zürich"
   }
@@ -1091,8 +1091,8 @@ Run these commands on `spider-01`. Each request is asynchronous and creates or r
     -H 'content-type: application/json' \
     --data-binary @- <<'JSON'
   {
-    "entry_id": "MdCuSADh178WWHMeO8rFgw",
     "businessname": "Restaurant Eichhörnli",
+    "entry_id": "MdCuSADh178WWHMeO8rFgw",
     "address": "Nietengasse 16, 8004 Zürich"
   }
   JSON
@@ -11696,6 +11696,36 @@ Run these commands on `spider-01`. Each request is asynchronous and creates or r
     "entry_id": "fwz-yFxIGYMxCDLkue7_0g",
     "businessname": "Ristorante Amalfi",
     "address": "Mainaustrasse 23, 8008 Zürich"
+  }
+  JSON
+  ```
+
+- [ ] `SLTAJZ8tymFJ7MGGpxus1g` — Aubrey — Schiffbaustrasse 10, 8005 Zürich
+
+  ```bash
+  curl --fail-with-body -sS \
+    -X POST http://127.0.0.1:8000/api/v1/register \
+    -H 'content-type: application/json' \
+    --data-binary @- <<'JSON'
+  {
+    "entry_id": "SLTAJZ8tymFJ7MGGpxus1g",
+    "businessname": "Aubrey",
+    "address": "Schiffbaustrasse 10, 8005 Zürich"
+  }
+  JSON
+  ```
+
+- [ ] `FvSOfUv_8a1Qm5S1J44KtQ` — Noerd Kantine — Schiffbaustrasse 10, 8005 Zürich
+
+  ```bash
+  curl --fail-with-body -sS \
+    -X POST http://127.0.0.1:8000/api/v1/register \
+    -H 'content-type: application/json' \
+    --data-binary @- <<'JSON'
+  {
+    "entry_id": "FvSOfUv_8a1Qm5S1J44KtQ",
+    "businessname": "Noerd Kantine",
+    "address": "Binzmühlestrasse 170, 8050 Zürich"
   }
   JSON
   ```
