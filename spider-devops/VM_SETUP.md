@@ -19,6 +19,8 @@ The commands assume:
 
 Do each step in order. Do not continue until its verification command passes.
 
+After installation, use [`OPERATIONS.md`](OPERATIONS.md) for routine start, stop, restart, update, monitoring, backup, and incident procedures.
+
 ---
 
 ## 0. Important operating rules
