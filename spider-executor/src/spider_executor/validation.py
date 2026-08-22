@@ -21,8 +21,10 @@ def validate_record(record: ScrapedRecord, expectations: RecordExpectations) -> 
         if field.value is None:
             if field.source is not None:
                 errors.append(f"field {name} is null but has provenance")
-            if name not in expectations.required_fields and name not in expectations.allowed_null_fields:
-                errors.append(f"field {name} is null but is not allowed to be null")
+            # A null field the contract never mentioned is accepted: the record
+            # schema grows new fields (e.g. JOBS) after an entry's contract was
+            # activated, and a null carries no data to distrust. Fields the
+            # contract requires are still enforced below.
             continue
         non_null += 1
         if not field.source:

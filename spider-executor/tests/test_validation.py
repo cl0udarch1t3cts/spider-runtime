@@ -42,18 +42,33 @@ def test_rejects_relative_or_non_http_provenance() -> None:
     assert "field NAME source must be an absolute HTTP(S) URL" in result.errors
 
 
-def test_rejects_null_field_not_explicitly_allowed() -> None:
+def test_accepts_undeclared_null_field_for_schema_growth() -> None:
+    # The record schema can gain fields (e.g. JOBS) after an entry's contract
+    # was activated; such fields arrive null and must not fail existing entries.
     result = validate_record(
         record(
             {
                 "NAME": {"value": "Example", "source": "https://example.com"},
-                "MENU": {"value": None, "source": None},
+                "JOBS": {"value": None, "source": None},
+            }
+        ),
+        RecordExpectations(required_fields=["NAME"]),
+    )
+    assert result.valid
+
+
+def test_rejects_undeclared_null_field_with_provenance() -> None:
+    result = validate_record(
+        record(
+            {
+                "NAME": {"value": "Example", "source": "https://example.com"},
+                "JOBS": {"value": None, "source": "https://example.com/jobs"},
             }
         ),
         RecordExpectations(required_fields=["NAME"]),
     )
     assert not result.valid
-    assert "field MENU is null but is not allowed to be null" in result.errors
+    assert "field JOBS is null but has provenance" in result.errors
 
 
 def test_accepts_explicitly_allowed_null_field() -> None:
