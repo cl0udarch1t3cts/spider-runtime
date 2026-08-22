@@ -33,8 +33,7 @@ After installation, use [`OPERATIONS.md`](OPERATIONS.md) for routine start, stop
 6. Keep the sibling `spider-scripts` checkout clean. Doctor publishes through isolated workspaces and Git.
 7. Do not use `db.doctor_tasks.deleteMany({})`. Task records are the durable audit and recovery state.
 8. Do not manually change a running/queued task unless the recovery procedure explicitly requires it.
-9. `spider-output` is obsolete. Production records are stored in MongoDB.
-10. Registration uses the exact `entry_id`; no slug is generated or required.
+9. Registration uses the exact `entry_id`; no slug is generated or required.
 
 ---
 

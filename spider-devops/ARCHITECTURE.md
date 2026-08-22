@@ -19,7 +19,7 @@ The Spider Platform turns a registered business into repeatable, deterministic w
 - After the scraper is provisioned, `spider-executor` executes it during normal operation and stores extracted records in MongoDB.
 - Spider Doctor is invoked again only when the executor encounters an execution problem. Repair tasks are also persisted in MongoDB before Doctor is triggered.
 - `entry_id` is the stable identity across registration, tasks, scraper association, execution, and stored results. A slug is not part of the contract.
-- `spider-output` is no longer part of the system; MongoDB is the authoritative store for extracted data and Doctor tasks.
+- MongoDB is the authoritative store for extracted data and Doctor tasks.
 
 The central architectural principle remains the compiler/runtime split:
 
@@ -65,8 +65,7 @@ The central architectural principle remains the compiler/runtime split:
 9. Executor alone performs normal production execution and stores extracted records in MongoDB.
 10. Doctor may write, commit, and push verified changes to `spider-scripts`.
 11. A slug is not required. Script identity and lookup are based on `entry_id`.
-12. `spider-output` is obsolete and must not be used as a runtime or persistence dependency.
-13. Scrapers use direct HTTP fetching with realistic browser headers; no headless browser is part of the normal scraper runtime.
+12. Scrapers use direct HTTP fetching with realistic browser headers; no headless browser is part of the normal scraper runtime.
 
 ## 3. Context and Scope
 
@@ -104,7 +103,7 @@ flowchart LR
 - LLM-based extraction during normal scraper execution.
 - Doctor scheduling unrelated to registration or execution failure.
 - Doctor writing production extraction records.
-- `spider-output` as a data store.
+- Any file-based output repository as a data store.
 - Slug generation as part of the public or internal contract.
 
 ## 4. Solution Strategy
@@ -545,9 +544,9 @@ Production records from Doctor's test executions are discarded. Only executor wr
 
 **Rationale:** The system needs one constrained code-generation operation, not a broadly exposed inference service or a forked agent runtime.
 
-### ADR-007: MongoDB supersedes `spider-output`
+### ADR-007: MongoDB is the single data store
 
-**Decision:** Store production extraction data and Doctor task state in MongoDB; do not maintain `spider-output`.
+**Decision:** Store production extraction data and Doctor task state in MongoDB; do not maintain a separate file-based output repository (the former one has been deleted).
 
 **Rationale:** MongoDB is the production data store, and a second output repository creates duplication and synchronization risk.
 
@@ -573,7 +572,6 @@ Production records from Doctor's test executions are discarded. Only executor wr
 | Risk / debt | Impact | Mitigation or next decision |
 |---|---|---|
 | Current repository conventions are slug-oriented. | Target `entry_id` identity may not match existing paths and runner arguments. | Define and implement the entry-ID-to-script layout and migration before executor integration. |
-| Existing documentation still references `spider-output`. | Agents may follow obsolete output and commit procedures. | Update operating documentation after this target architecture is accepted. |
 | Concurrent Doctor Git pushes can conflict. | A verified change may fail publication or overwrite assumptions. | Serialize publication or use task branches with controlled integration. |
 | Trigger transport is not yet specified. | Recovery and authentication details remain open. | Choose a narrow internal mechanism; keep MongoDB authoritative regardless of transport. |
 | MongoDB collection schemas and indexes are not finalized. | Duplicate active tasks or slow claims are possible. | Define unique/partial indexes and atomic claim operations during detailed design. |
@@ -595,5 +593,4 @@ Production records from Doctor's test executions are discarded. Only executor wr
 | Verification execution | Doctor-run scraper execution used to develop and validate code; it does not write production data. |
 | Production execution | Executor-run scraper execution whose validated result is stored in MongoDB. |
 | `spider-scripts` | Authoritative Git repository and runtime source for deterministic scraper code. |
-| `spider-output` | Obsolete former output repository; not part of the target architecture. |
 | Provenance | Exact source URL supporting an extracted field value. |
