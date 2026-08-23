@@ -419,53 +419,6 @@ export default function Dashboard() {
         </section>
 
         <section className="panel wide">
-          <h2>
-            Latest record{" "}
-            {record?.slug ? <span className="muted">· {record.slug}</span> : null}
-            {pinnedRecord ? (
-              <button
-                className="link"
-                onClick={() => {
-                  setPinnedRecord(false);
-                }}
-              >
-                (follow latest)
-              </button>
-            ) : null}
-          </h2>
-          {record?.fields ? (
-            <>
-              <p className="muted">
-                {record.website ?? ""} · fetched {ago(record.fetched_at ?? null)}{" "}
-                · run {recordId?.slice(0, 12)}
-              </p>
-              <table>
-                <thead>
-                  <tr>
-                    <th>field</th>
-                    <th>value</th>
-                    <th>source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(record.fields).map(([name, field]) => (
-                    <tr key={name}>
-                      <td>{name}</td>
-                      <td className="value-cell">{fieldText(field.value)}</td>
-                      <td className="muted">{field.source ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          ) : record?.error ? (
-            <p className="error">{record.error}</p>
-          ) : (
-            <p className="muted">no scraped record yet</p>
-          )}
-        </section>
-
-        <section className="panel wide">
           <h2>Entries</h2>
           {fetchNote ? <p className="note">{fetchNote}</p> : null}
           <table>
@@ -515,6 +468,53 @@ export default function Dashboard() {
             </tbody>
           </table>
         </section>
+        <section className="panel wide">
+          <h2>
+            Latest record{" "}
+            {record?.slug ? <span className="muted">· {record.slug}</span> : null}
+            {pinnedRecord ? (
+              <button
+                className="link"
+                onClick={() => {
+                  setPinnedRecord(false);
+                }}
+              >
+                (follow latest)
+              </button>
+            ) : null}
+          </h2>
+          {record?.fields ? (
+            <>
+              <p className="muted">
+                {record.website ?? ""} · fetched {ago(record.fetched_at ?? null)}{" "}
+                · run {recordId?.slice(0, 12)}
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>field</th>
+                    <th>value</th>
+                    <th>source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(record.fields).map(([name, field]) => (
+                    <tr key={name}>
+                      <td>{name}</td>
+                      <td className="value-cell">{fieldText(field.value)}</td>
+                      <td className="muted">{field.source ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : record?.error ? (
+            <p className="error">{record.error}</p>
+          ) : (
+            <p className="muted">no scraped record yet</p>
+          )}
+        </section>
+
       </div>
     </main>
   );

@@ -49,12 +49,26 @@ def _doctor_entry_contract(result: dict) -> dict:
         return {}
     if not isinstance(metadata, dict):
         raise RuntimeError("Doctor result metadata must be an object")
-    website = metadata.get("website")
+    # Hermes results have carried several metadata shapes over time: website
+    # vs official_website, and explicit extracted/null field lists vs a
+    # live_run_fields value dict vs no field information at all.
+    website = metadata.get("website") or metadata.get("official_website")
     extracted = metadata.get("extracted_fields")
     null_fields = metadata.get("null_fields")
+    live_run_fields = metadata.get("live_run_fields")
+    if (
+        not isinstance(extracted, list)
+        and not isinstance(null_fields, list)
+        and isinstance(live_run_fields, dict)
+    ):
+        extracted = [name for name, value in live_run_fields.items() if value is not None]
+        null_fields = [name for name, value in live_run_fields.items() if value is None]
     parsed = urlparse(website) if isinstance(website, str) else None
     if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise RuntimeError("Doctor result metadata must contain an absolute website URL")
+    if extracted is None and null_fields is None:
+        # Website-only result: activate without field expectations.
+        return {"website": website}
     if not isinstance(extracted, list) or not isinstance(null_fields, list):
         raise RuntimeError("Doctor result metadata must contain extracted_fields and null_fields")
     field_name = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")

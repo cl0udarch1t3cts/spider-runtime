@@ -171,6 +171,74 @@ def test_next_handoff_skips_a_poison_task_and_records_the_error() -> None:
     assert blocked.get("handed_off_at") is None
 
 
+def test_handoff_accepts_live_run_fields_metadata_shape() -> None:
+    # Newer Hermes results report official_website and a live_run_fields dict
+    # instead of website plus explicit extracted/null field lists.
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+    registration = service.register("business-123", "Example AG", "Bern")
+    service.db.doctor_tasks.update_one(
+        {"_id": registration["task_id"]},
+        {
+            "$set": {
+                "status": "succeeded",
+                "result": {
+                    "commit_sha": COMMIT_SHA,
+                    "metadata": {
+                        "entry_id": "business-123",
+                        "official_website": "https://example.com/",
+                        "live_run_fields": {
+                            "NAME": "Example",
+                            "EMAIL": None,
+                            "OPENING_HOURS": {"Mon": "09:00 - 17:00"},
+                            "JOBS": None,
+                        },
+                    },
+                },
+            }
+        },
+    )
+
+    assert service.consume_doctor_handoff(registration["task_id"]) is not None
+
+    entry = service.get_entry("business-123")
+    assert entry.scraper_release == COMMIT_SHA
+    assert entry.website == "https://example.com/"
+    assert entry.validation.required_fields == ["NAME", "OPENING_HOURS"]
+    assert entry.validation.allowed_null_fields == ["EMAIL", "JOBS"]
+    assert entry.validation.allowed_source_hosts == ["example.com"]
+    assert service.is_entry_release_activated("business-123", COMMIT_SHA)
+
+
+def test_handoff_accepts_website_only_metadata_shape() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+    registration = service.register("business-123", "Example AG", "Bern")
+    service.db.doctor_tasks.update_one(
+        {"_id": registration["task_id"]},
+        {
+            "$set": {
+                "status": "succeeded",
+                "result": {
+                    "commit_sha": COMMIT_SHA,
+                    "metadata": {
+                        "entry_id": "business-123",
+                        "name": "Example",
+                        "website": "https://example.com/contact",
+                    },
+                },
+            }
+        },
+    )
+
+    assert service.consume_doctor_handoff(registration["task_id"]) is not None
+
+    entry = service.get_entry("business-123")
+    assert entry.scraper_release == COMMIT_SHA
+    assert entry.website == "https://example.com/contact"
+    # No field information available: validation expectations stay default.
+    assert entry.validation.required_fields == []
+    assert service.is_entry_release_activated("business-123", COMMIT_SHA)
+
+
 def test_doctor_handoff_requires_succeeded_task_with_exact_commit_sha() -> None:
     service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
     registration = service.register("business-123", "Example AG", "Bern")
