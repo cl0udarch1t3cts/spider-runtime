@@ -6,7 +6,7 @@ This tutorial deploys the complete Spider platform on one Ubuntu VM:
 - MongoDB: durable registrations, tasks, execution state, and scraped records
 - Spider Doctor: creates and repairs deterministic scrapers with stock Hermes/Codex
 - `spider-scripts`: authoritative scraper source repository
-- `spider-devops`: architecture, operations, and bulk-registration commands
+- `docs/` (in `spider-runtime`): architecture, operations, and bulk-registration commands
 
 The commands assume:
 
@@ -116,7 +116,7 @@ Do not continue until this works. Doctor uses this read-only SSH identity to pub
 ## 4. Clone the two repositories
 
 `spider-runtime` is the monorepo containing `spider-doctor/`, `spider-executor/`,
-and `spider-devops/`. `spider-scripts` stays a standalone repository because the
+and its `docs/`. `spider-scripts` stays a standalone repository because the
 Doctor clones and commits into it.
 
 ```bash
@@ -463,7 +463,7 @@ Executor then consumes the succeeded Doctor handoff, provisions the exact commit
 After the canary succeeds, open:
 
 ```text
-/home/spider/projects/spider-runtime/spider-devops/TODO.md
+/home/spider/projects/spider-runtime/docs/TODO.md
 ```
 
 Each checklist item contains a shell-safe `curl` using a quoted JSON heredoc. Run one request at a time initially and verify the returned task ID before moving to a larger batch.

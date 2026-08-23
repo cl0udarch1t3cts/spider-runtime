@@ -1,5 +1,5 @@
 # Convenience wrapper over the two Compose stacks. The stacks stay separate
-# projects on purpose (see spider-devops/OPERATIONS.md, which remains the
+# projects on purpose (see docs/OPERATIONS.md, which remains the
 # authoritative runbook); every target here mirrors a documented procedure,
 # including its ordering constraints.
 

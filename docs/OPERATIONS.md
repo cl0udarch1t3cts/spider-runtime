@@ -22,7 +22,7 @@ Project root: /home/spider/projects
 Executor: /home/spider/projects/spider-runtime/spider-executor
 Doctor: /home/spider/projects/spider-runtime/spider-doctor
 Scrapers: /home/spider/projects/spider-scripts
-Operations: /home/spider/projects/spider-runtime/spider-devops
+Operations: /home/spider/projects/spider-runtime/docs
 ```
 
 Run Docker commands as `spider`, without `sudo`.
@@ -374,7 +374,7 @@ Do not rerun `scripts/configure-hermes.sh` during a normal code update.
 ## Update operations documentation
 
 ```bash
-cd /home/spider/projects/spider-runtime/spider-devops
+cd /home/spider/projects/spider-runtime/docs
 git pull --ff-only
 ```
 
