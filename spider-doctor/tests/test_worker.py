@@ -307,3 +307,41 @@ def test_candidate_publication_skips_the_budget_gate(tmp_path: Path) -> None:
 
     assert result.status == DoctorStatus.AWAITING_REVIEW
     assert repository.published == ("task-1", "token", "c" * 40)
+
+
+def test_pause_flag_stops_claiming_entirely(tmp_path: Path) -> None:
+    class MustNotClaim(FakeRepository):
+        def claim(self, worker_id, lease_for):
+            raise AssertionError("paused Doctor must not claim tasks")
+
+    worker = DoctorWorker(
+        MustNotClaim(running_task()),
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        MustNotLaunch(),
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+        pause_check=lambda: True,
+    )
+
+    assert worker.process_one() is None
+
+
+def test_pause_check_false_processes_normally(tmp_path: Path) -> None:
+    repository = FakeRepository(running_task())
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        FakeLauncher(),
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+        pause_check=lambda: False,
+    )
+
+    result = worker.process_one()
+
+    assert result.status == DoctorStatus.AWAITING_REVIEW
+    assert repository.published is not None

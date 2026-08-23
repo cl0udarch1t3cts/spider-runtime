@@ -548,6 +548,20 @@ class MongoControlService:
     def doctor_task_count(self) -> int:
         return self.db.doctor_tasks.count_documents({})
 
+    # --- doctor pause control ------------------------------------------------
+
+    def doctor_paused(self) -> bool:
+        control = self.db.runtime_state.find_one({"_id": "doctor_control"})
+        return bool(control and control.get("paused"))
+
+    def set_doctor_paused(self, paused: bool) -> bool:
+        self.db.runtime_state.replace_one(
+            {"_id": "doctor_control"},
+            {"_id": "doctor_control", "paused": bool(paused), "updated_at": datetime.now(UTC)},
+            upsert=True,
+        )
+        return bool(paused)
+
     # --- read-only console listings -----------------------------------------
 
     def list_entries(self) -> list[dict]:
@@ -633,6 +647,7 @@ class MongoControlService:
             "doctor_tasks": by_status(self.db.doctor_tasks),
             "execution_jobs": by_status(self.db.execution_jobs),
             "execution_runs": by_status(self.db.execution_runs),
+            "doctor_paused": self.doctor_paused(),
         }
 
     @contextmanager

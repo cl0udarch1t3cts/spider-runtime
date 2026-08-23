@@ -259,3 +259,40 @@ def test_api_bounds_console_listing_limits() -> None:
     assert client.get("/api/v1/runs?limit=0").status_code == 422
     assert client.get("/api/v1/runs?limit=201").status_code == 422
     assert client.get("/api/v1/doctor-tasks?limit=201").status_code == 422
+
+
+def test_doctor_pause_flag_round_trip_and_stats_exposure() -> None:
+    service = seeded_service()
+
+    assert service.doctor_paused() is False
+    service.set_doctor_paused(True)
+    assert service.doctor_paused() is True
+    assert service.stats()["doctor_paused"] is True
+    service.set_doctor_paused(False)
+    assert service.doctor_paused() is False
+    assert service.stats()["doctor_paused"] is False
+
+
+def test_api_exposes_doctor_pause_control() -> None:
+    class PausableControl(ConsoleFakeControl):
+        paused = False
+
+        def doctor_paused(self):
+            return self.paused
+
+        def set_doctor_paused(self, paused: bool):
+            self.paused = paused
+            return paused
+
+    control = PausableControl()
+    client = TestClient(create_app(control))
+
+    assert client.get("/api/v1/doctor-control").json() == {"paused": False}
+    response = client.put("/api/v1/doctor-control", json={"paused": True})
+    assert response.status_code == 200
+    assert response.json() == {"paused": True}
+    assert control.paused is True
+    assert client.put("/api/v1/doctor-control", json={"paused": False}).json() == {
+        "paused": False
+    }
+    assert client.put("/api/v1/doctor-control", json={}).status_code == 422

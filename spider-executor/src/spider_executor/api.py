@@ -31,6 +31,8 @@ class Control(Protocol):
     def list_recent_runs(self, limit: int) -> list[dict]: ...
     def list_doctor_tasks(self, limit: int) -> list[dict]: ...
     def stats(self) -> dict: ...
+    def doctor_paused(self) -> bool: ...
+    def set_doctor_paused(self, paused: bool) -> bool: ...
 
 
 class JobRequest(BaseModel):
@@ -106,6 +108,13 @@ class OverviewStats(BaseModel):
     doctor_tasks: dict[str, int]
     execution_jobs: dict[str, int]
     execution_runs: dict[str, int]
+    doctor_paused: bool = False
+
+
+class DoctorControl(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    paused: bool
 
 
 def create_app(control: Control) -> FastAPI:
@@ -184,5 +193,13 @@ def create_app(control: Control) -> FastAPI:
     @app.get("/api/v1/stats", response_model=OverviewStats)
     def overview_stats() -> dict:
         return control.stats()
+
+    @app.get("/api/v1/doctor-control", response_model=DoctorControl)
+    def get_doctor_control() -> dict:
+        return {"paused": control.doctor_paused()}
+
+    @app.put("/api/v1/doctor-control", response_model=DoctorControl)
+    def set_doctor_control(request: DoctorControl) -> dict:
+        return {"paused": control.set_doctor_paused(request.paused)}
 
     return app

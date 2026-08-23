@@ -51,6 +51,7 @@ interface Overview {
       doctor_tasks: Record<string, number>;
       execution_jobs: Record<string, number>;
       execution_runs: Record<string, number>;
+      doctor_paused?: boolean;
     };
     tasks?: DoctorTask[];
     runs?: Run[];
@@ -132,6 +133,35 @@ export default function Dashboard() {
   const [record, setRecord] = useState<ScrapedRecord | null>(null);
   const [pinnedRecord, setPinnedRecord] = useState(false);
   const [fetchNote, setFetchNote] = useState<string | null>(null);
+
+  const togglePause = async (paused: boolean) => {
+    try {
+      const response = await fetch("/api/doctor-control", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paused }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        setFetchNote(`pause toggle failed: ${String(body?.error ?? response.status)}`);
+        return;
+      }
+      // Reflect immediately; the next poll confirms.
+      setData((current) =>
+        current?.executor.stats
+          ? {
+              ...current,
+              executor: {
+                ...current.executor,
+                stats: { ...current.executor.stats, doctor_paused: paused },
+              },
+            }
+          : current,
+      );
+    } catch (exc) {
+      setFetchNote(`pause toggle failed: ${String(exc)}`);
+    }
+  };
 
   const showData = async (entryId: string) => {
     try {
@@ -253,10 +283,25 @@ export default function Dashboard() {
             </span>
           </div>
         </div>
-        <span className="meta">
-          refreshed {ago(data.generatedAt)}
-          {error ? <span className="error"> — {error}</span> : null}
-        </span>
+        <div className="header-right">
+          {stats ? (
+            <button
+              className={`action pause ${stats.doctor_paused ? "paused" : ""}`}
+              title={
+                stats.doctor_paused
+                  ? "LLM calls are paused: the Doctor claims no tasks. Click to resume."
+                  : "Pause all LLM calls: the Doctor stops claiming tasks (in-flight runs finish)."
+              }
+              onClick={() => togglePause(!stats.doctor_paused)}
+            >
+              {stats.doctor_paused ? "▶ resume LLM" : "⏸ pause LLM"}
+            </button>
+          ) : null}
+          <span className="meta">
+            refreshed {ago(data.generatedAt)}
+            {error ? <span className="error"> — {error}</span> : null}
+          </span>
+        </div>
       </div>
 
       <div className="grid">

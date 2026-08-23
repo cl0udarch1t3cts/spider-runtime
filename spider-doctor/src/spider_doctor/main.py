@@ -53,6 +53,11 @@ def create_worker(settings: Settings) -> DoctorWorker:
     db = client[settings.mongodb_database]
     repository = MongoDoctorTaskRepository(db.doctor_tasks)
     repository.ensure_indexes()
+
+    def doctor_paused() -> bool:
+        control = db.runtime_state.find_one({"_id": "doctor_control"})
+        return bool(control and control.get("paused"))
+
     return DoctorWorker(
         repository,
         MongoEvidenceLoader(db),
@@ -79,6 +84,7 @@ def create_worker(settings: Settings) -> DoctorWorker:
         lease_for=timedelta(minutes=settings.lease_minutes),
         budget_gate=budget_gate,
         budget_retry_after=timedelta(minutes=settings.budget_retry_minutes),
+        pause_check=doctor_paused,
     )
 
 

@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import threading
+from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 from typing import Protocol
@@ -72,6 +73,7 @@ class DoctorWorker:
         lease_for: timedelta = timedelta(minutes=30),
         budget_gate: BudgetGate | None = None,
         budget_retry_after: timedelta = timedelta(minutes=30),
+        pause_check: Callable[[], bool] | None = None,
     ) -> None:
         self.repository = repository
         self.evidence_loader = evidence_loader
@@ -86,8 +88,24 @@ class DoctorWorker:
         # Serializes publication within this process: concurrent pushes to the
         # same branch would force one task through the rebase-and-requeue path.
         self._publish_lock = threading.Lock()
+        self.pause_check = pause_check
+        self._pause_logged = False
+
+    def _paused(self) -> bool:
+        if self.pause_check is None:
+            return False
+        paused = self.pause_check()
+        if paused and not self._pause_logged:
+            logger.warning("Doctor is paused: no tasks are claimed and no LLM calls are made")
+            self._pause_logged = True
+        elif not paused and self._pause_logged:
+            logger.info("Doctor is unpaused: resuming task processing")
+            self._pause_logged = False
+        return paused
 
     def process_one(self) -> DoctorResult | None:
+        if self._paused():
+            return None
         task = self.repository.claim(self.worker_id, lease_for=self.lease_for)
         if task is None:
             return None

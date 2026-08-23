@@ -663,6 +663,19 @@ to `127.0.0.1:8646` on the VM only; access it through a tunnel:
 ssh -N -L 8646:127.0.0.1:8646 spider-01   # then open http://localhost:8646
 ```
 
+## Pausing all LLM calls
+
+The console's pause button (top right) — or a direct API call — flips the
+durable `runtime_state` flag `{_id: "doctor_control", paused: true}`. While
+paused, the Doctor claims no tasks and launches no Hermes containers; a run
+already in flight finishes normally (at most the agent timeout). The flag
+survives restarts; unpause resumes claiming immediately.
+
+```bash
+curl -sS -X PUT http://127.0.0.1:8000/api/v1/doctor-control \
+  -H 'content-type: application/json' -d '{"paused": true}'   # or false
+```
+
 ## Doctor parallelism
 
 The Doctor processes up to `SPIDER_DOCTOR_MAX_PARALLEL_TASKS` (default 2) tasks
