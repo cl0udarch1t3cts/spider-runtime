@@ -33,7 +33,7 @@ The root `Makefile` wraps VM operations (start/stop/restart/update/logs for both
 
 ## Architecture
 
-Full detail: `docs/ARCHITECTURE.md`. The load-bearing ideas:
+Full detail is statically imported from @docs/ARCHITECTURE.md — the load-bearing ideas:
 
 **Two services, one hard boundary.** The Executor must stay deterministic — no LLM calls ever. All LLM work happens in Doctor's disposable task containers. Failure classification enforces this split: only deterministic scraper/schema/identity/semantic failures create `doctor_tasks`; network blocks and rate limits must not.
 
