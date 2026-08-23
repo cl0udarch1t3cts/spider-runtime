@@ -39,6 +39,31 @@ async function executorGet<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function fetchRecord(recordId: string) {
+  return executorGet<Record<string, unknown>>(
+    `/api/v1/records/${encodeURIComponent(recordId)}`,
+  );
+}
+
+export async function enqueueExecution(entryId: string): Promise<{
+  ok: boolean;
+  status: number;
+  body: unknown;
+}> {
+  const response = await fetch(`${EXECUTOR_API_URL}/api/v1/execution-jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entry_id: entryId, trigger: "console" }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  return {
+    ok: response.ok,
+    status: response.status,
+    body: await response.json().catch(() => null),
+  };
+}
+
 export async function fetchExecutor() {
   const [stats, tasks, runs, entries] = await Promise.all([
     executorGet<Record<string, unknown>>("/api/v1/stats"),

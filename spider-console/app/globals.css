@@ -208,3 +208,47 @@ td {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.value-cell {
+  max-width: 480px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--brand-light);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+button.action {
+  background: var(--brand);
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0.15rem 0.7rem;
+}
+
+button.action:hover {
+  background: var(--brand-light);
+}
+
+button.action:disabled {
+  background: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.note {
+  color: var(--brand-light);
+  font-size: 12px;
+  margin-bottom: 0.5rem;
+}

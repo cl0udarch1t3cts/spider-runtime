@@ -105,9 +105,56 @@ function StatusBadge({ value }: { value: string | null }) {
   return <span className={`status ${value ?? ""}`}>{value ?? "—"}</span>;
 }
 
+interface RecordField {
+  value: unknown;
+  source: string | null;
+}
+
+interface ScrapedRecord {
+  slug?: string;
+  website?: string;
+  fetched_at?: string;
+  fields?: Record<string, RecordField>;
+  errors?: string[];
+  error?: string;
+}
+
+function fieldText(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 1);
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [recordId, setRecordId] = useState<string | null>(null);
+  const [record, setRecord] = useState<ScrapedRecord | null>(null);
+  const [pinnedRecord, setPinnedRecord] = useState(false);
+  const [fetchNote, setFetchNote] = useState<string | null>(null);
+
+  const triggerFetch = async (entryId: string) => {
+    setFetchNote(`enqueueing ${entryId}…`);
+    try {
+      const response = await fetch("/api/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId }),
+      });
+      const body = await response.json().catch(() => null);
+      if (response.ok) {
+        setFetchNote(
+          `job ${String(body?.id ?? "").slice(0, 12)} queued for ${entryId} — a fresh run appears below once the worker picks it up`,
+        );
+      } else {
+        setFetchNote(
+          `${entryId}: ${String(body?.detail ?? body?.error ?? `HTTP ${response.status}`)}`,
+        );
+      }
+    } catch (exc) {
+      setFetchNote(`${entryId}: ${String(exc)}`);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -132,6 +179,32 @@ export default function Dashboard() {
     };
   }, []);
 
+  const runs = data?.executor.runs ?? [];
+  const latestRecordId =
+    runs.find((run) => run.status === "succeeded" && run.record_id)
+      ?.record_id ?? null;
+
+  // Follow the newest record unless the user pinned one from the runs table.
+  useEffect(() => {
+    if (!pinnedRecord && latestRecordId) setRecordId(latestRecordId);
+  }, [latestRecordId, pinnedRecord]);
+
+  useEffect(() => {
+    if (!recordId) return;
+    let cancelled = false;
+    fetch(`/api/record/${encodeURIComponent(recordId)}`)
+      .then(async (response) => (await response.json()) as ScrapedRecord)
+      .then((payload) => {
+        if (!cancelled) setRecord(payload);
+      })
+      .catch((exc) => {
+        if (!cancelled) setRecord({ error: String(exc) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [recordId]);
+
   if (!data) {
     return <p className="muted">loading{error ? ` — ${error}` : "…"}</p>;
   }
@@ -139,7 +212,6 @@ export default function Dashboard() {
   const { executor, usage } = data;
   const stats = executor.stats;
   const tasks = executor.tasks ?? [];
-  const runs = executor.runs ?? [];
   const entries = executor.entries ?? [];
   const budget = usage && !usage.error ? usage.budget : null;
   const live = tasks.filter(isLive);
@@ -301,7 +373,21 @@ export default function Dashboard() {
                   </td>
                   <td>{run.failure_class ?? "—"}</td>
                   <td>{sha(run.scraper_release)}</td>
-                  <td>{run.record_id ? run.record_id.slice(0, 12) : "—"}</td>
+                  <td>
+                    {run.record_id ? (
+                      <button
+                        className="link"
+                        onClick={() => {
+                          setPinnedRecord(true);
+                          setRecordId(run.record_id);
+                        }}
+                      >
+                        {run.record_id.slice(0, 12)}
+                      </button>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td>{ago(run.started_at)}</td>
                 </tr>
               ))}
@@ -310,7 +396,55 @@ export default function Dashboard() {
         </section>
 
         <section className="panel wide">
+          <h2>
+            Latest record{" "}
+            {record?.slug ? <span className="muted">· {record.slug}</span> : null}
+            {pinnedRecord ? (
+              <button
+                className="link"
+                onClick={() => {
+                  setPinnedRecord(false);
+                }}
+              >
+                (follow latest)
+              </button>
+            ) : null}
+          </h2>
+          {record?.fields ? (
+            <>
+              <p className="muted">
+                {record.website ?? ""} · fetched {ago(record.fetched_at ?? null)}{" "}
+                · run {recordId?.slice(0, 12)}
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>field</th>
+                    <th>value</th>
+                    <th>source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(record.fields).map(([name, field]) => (
+                    <tr key={name}>
+                      <td>{name}</td>
+                      <td className="value-cell">{fieldText(field.value)}</td>
+                      <td className="muted">{field.source ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : record?.error ? (
+            <p className="error">{record.error}</p>
+          ) : (
+            <p className="muted">no scraped record yet</p>
+          )}
+        </section>
+
+        <section className="panel wide">
           <h2>Entries</h2>
+          {fetchNote ? <p className="note">{fetchNote}</p> : null}
           <table>
             <thead>
               <tr>
@@ -320,6 +454,7 @@ export default function Dashboard() {
                 <th>active</th>
                 <th>release</th>
                 <th>updated</th>
+                <th>actions</th>
               </tr>
             </thead>
             <tbody>
@@ -331,6 +466,20 @@ export default function Dashboard() {
                   <td>{entry.active ? "yes" : "no"}</td>
                   <td>{sha(entry.scraper_release)}</td>
                   <td>{ago(entry.updated_at)}</td>
+                  <td>
+                    <button
+                      className="action"
+                      disabled={!entry.scraper_release}
+                      title={
+                        entry.scraper_release
+                          ? "Run the spider script now and fetch the latest data"
+                          : "no activated scraper release"
+                      }
+                      onClick={() => triggerFetch(entry.id)}
+                    >
+                      fetch
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
