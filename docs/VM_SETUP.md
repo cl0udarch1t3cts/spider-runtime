@@ -468,7 +468,7 @@ After the canary succeeds, open:
 
 Each checklist item contains a shell-safe `curl` using a quoted JSON heredoc. Run one request at a time initially and verify the returned task ID before moving to a larger batch.
 
-Some source IDs in the supplied list contain spaces or begin with `_`/`-`. `TODO.md` preserves them exactly and marks them with a warning. The registration API is expected to reject those IDs until the source value is corrected. Do not silently “repair” an identifier.
+Some source IDs in the supplied list contain spaces or begin with `_`/`-`. `EXAMPLES.md` preserves them exactly and marks them with a warning. The registration API is expected to reject those IDs until the source value is corrected. Do not silently “repair” an identifier.
 
 ---
 
