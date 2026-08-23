@@ -30,15 +30,16 @@ status: ## Show container status of both stacks
 health: ## Check the Executor readiness endpoint
 	curl --fail-with-body $(HEALTH_URL)
 
+# The console shares the Doctor's .env so budget knobs stay in sync.
 console: ## Build and start the read-only console on 127.0.0.1:8646 (access via SSH tunnel)
-	cd $(CONSOLE_DIR) && SPIDER_DOCTOR_HOST_ROOT=$(DOCTOR_DIR) docker compose up --build -d
+	cd $(CONSOLE_DIR) && docker compose --env-file $(DOCTOR_DIR)/.env up --build -d
 	@echo "console up; open a tunnel: ssh -N -L 8646:127.0.0.1:8646 <vm> then http://localhost:8646"
 
 console-down: ## Stop the console
-	cd $(CONSOLE_DIR) && SPIDER_DOCTOR_HOST_ROOT=$(DOCTOR_DIR) docker compose down
+	cd $(CONSOLE_DIR) && docker compose --env-file $(DOCTOR_DIR)/.env down
 
 console-logs: ## Recent console logs
-	cd $(CONSOLE_DIR) && SPIDER_DOCTOR_HOST_ROOT=$(DOCTOR_DIR) docker compose logs --no-color --since=10m
+	cd $(CONSOLE_DIR) && docker compose --env-file $(DOCTOR_DIR)/.env logs --no-color --since=10m
 
 usage: ## Show current subscription usage via the broker (budget gate source)
 	@cd $(DOCTOR_DIR) && docker compose exec doctor python3 -c 'import os, json, urllib.request; \
