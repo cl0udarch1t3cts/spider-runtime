@@ -146,7 +146,7 @@ def test_next_handoff_skips_a_poison_task_and_records_the_error() -> None:
                 "completed_at": "2026-01-01T00:00:00Z",
                 "result": {
                     "commit_sha": "a" * 40,
-                    "metadata": {"website": "not-a-url"},
+                    "metadata": "not-an-object",
                 },
             }
         },
@@ -167,7 +167,7 @@ def test_next_handoff_skips_a_poison_task_and_records_the_error() -> None:
     assert job is not None
     assert job.entry_id == "business-2"
     blocked = service.db.doctor_tasks.find_one({"_id": poison["task_id"]})
-    assert "website" in blocked["handoff_error"]
+    assert "metadata" in blocked["handoff_error"]
     assert blocked.get("handed_off_at") is None
 
 
@@ -237,6 +237,44 @@ def test_handoff_accepts_website_only_metadata_shape() -> None:
     # No field information available: validation expectations stay default.
     assert entry.validation.required_fields == []
     assert service.is_entry_release_activated("business-123", COMMIT_SHA)
+
+
+def test_handoff_activates_despite_free_form_metadata_shapes() -> None:
+    # Hermes metadata is free-form agent output; activation must never be
+    # blocked by its shape. Observed variants: official_site, extracted_fields
+    # without null_fields, arbitrary bookkeeping keys, no website at all.
+    shapes = [
+        {"entry_id": "x", "official_site": "https://example.com/", "official_name": "X"},
+        {
+            "entry_id": "x",
+            "official_website": "https://example.com/kontakt",
+            "extracted_fields": ["NAME", "EMAIL"],
+        },
+        {"entry_id": "x", "targeted_pytest_exit_code": 0, "live_run_exit_code": 0},
+    ]
+    for index, metadata in enumerate(shapes):
+        service = MongoControlService(
+            mongomock.MongoClient().spider, release_provider=lambda: "b" * 40
+        )
+        registration = service.register("business-123", "Example AG", "Bern")
+        service.db.doctor_tasks.update_one(
+            {"_id": registration["task_id"]},
+            {
+                "$set": {
+                    "status": "succeeded",
+                    "result": {"commit_sha": COMMIT_SHA, "metadata": metadata},
+                }
+            },
+        )
+
+        assert service.consume_doctor_handoff(registration["task_id"]) is not None, index
+
+        entry = service.get_entry("business-123")
+        assert entry.scraper_release == COMMIT_SHA, index
+        # Incomplete field information must not create validation expectations.
+        assert entry.validation.required_fields == [], index
+    # The first two shapes carry a usable website.
+    assert entry.website is None  # last shape had none
 
 
 def test_doctor_handoff_requires_succeeded_task_with_exact_commit_sha() -> None:

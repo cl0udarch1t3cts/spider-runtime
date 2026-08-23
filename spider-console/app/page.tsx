@@ -425,6 +425,7 @@ export default function Dashboard() {
         <section className="panel wide">
           <h2>Entries</h2>
           {fetchNote ? <p className="note">{fetchNote}</p> : null}
+          <div className="scroll entries">
           <table>
             <thead>
               <tr>
@@ -472,6 +473,7 @@ export default function Dashboard() {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
         <section className="panel wide">
           <h2>

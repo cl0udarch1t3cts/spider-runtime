@@ -43,16 +43,34 @@ def _decode(model_type, document: dict | None, *, id_field: bool = False):
     return model_type.model_validate(data)
 
 
+_METADATA_WEBSITE_KEYS = ("website", "official_website", "official_site", "homepage", "url")
+
+
 def _doctor_entry_contract(result: dict) -> dict:
+    """Best-effort extraction from free-form Hermes result metadata.
+
+    The metadata dict is agent-authored and its shape varies between runs;
+    activation must never be blocked by it. A usable website and a complete,
+    valid field contract are applied when present, everything else is ignored.
+    """
     metadata = result.get("metadata")
     if metadata is None:
         return {}
     if not isinstance(metadata, dict):
         raise RuntimeError("Doctor result metadata must be an object")
-    # Hermes results have carried several metadata shapes over time: website
-    # vs official_website, and explicit extracted/null field lists vs a
-    # live_run_fields value dict vs no field information at all.
-    website = metadata.get("website") or metadata.get("official_website")
+    website = None
+    parsed = None
+    for key in _METADATA_WEBSITE_KEYS:
+        candidate = metadata.get(key)
+        candidate_parsed = urlparse(candidate) if isinstance(candidate, str) else None
+        if (
+            candidate_parsed is not None
+            and candidate_parsed.scheme in {"http", "https"}
+            and candidate_parsed.hostname
+        ):
+            website = candidate
+            parsed = candidate_parsed
+            break
     extracted = metadata.get("extracted_fields")
     null_fields = metadata.get("null_fields")
     live_run_fields = metadata.get("live_run_fields")
@@ -63,33 +81,28 @@ def _doctor_entry_contract(result: dict) -> dict:
     ):
         extracted = [name for name, value in live_run_fields.items() if value is not None]
         null_fields = [name for name, value in live_run_fields.items() if value is None]
-    parsed = urlparse(website) if isinstance(website, str) else None
-    if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise RuntimeError("Doctor result metadata must contain an absolute website URL")
-    if extracted is None and null_fields is None:
-        # Website-only result: activate without field expectations.
-        return {"website": website}
-    if not isinstance(extracted, list) or not isinstance(null_fields, list):
-        raise RuntimeError("Doctor result metadata must contain extracted_fields and null_fields")
+    contract: dict = {}
+    if website is not None:
+        contract["website"] = website
     field_name = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
     if (
-        not extracted
-        or any(not isinstance(value, str) or not field_name.fullmatch(value) for value in extracted)
-        or any(not isinstance(value, str) or not field_name.fullmatch(value) for value in null_fields)
-        or len(extracted) != len(set(extracted))
-        or len(null_fields) != len(set(null_fields))
-        or set(extracted) & set(null_fields)
+        website is not None
+        and isinstance(extracted, list)
+        and isinstance(null_fields, list)
+        and extracted
+        and all(isinstance(value, str) and field_name.fullmatch(value) for value in extracted)
+        and all(isinstance(value, str) and field_name.fullmatch(value) for value in null_fields)
+        and len(extracted) == len(set(extracted))
+        and len(null_fields) == len(set(null_fields))
+        and not set(extracted) & set(null_fields)
     ):
-        raise RuntimeError("Doctor result field contract is invalid")
-    return {
-        "website": website,
-        "validation": {
+        contract["validation"] = {
             "required_fields": extracted,
             "allowed_null_fields": null_fields,
             "minimum_non_null_fields": len(extracted),
             "allowed_source_hosts": [parsed.hostname.lower()],
-        },
-    }
+        }
+    return contract
 
 
 class MongoControlService:
