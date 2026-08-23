@@ -164,6 +164,46 @@ def test_usage_probes_the_provider_endpoint_and_normalizes_field_names() -> None
     }
 
 
+def test_usage_normalizes_the_production_rate_limit_shape() -> None:
+    # Shape observed live on 2026-08-23: singular rate_limit, *_window names,
+    # window duration in seconds, reset as reset_after_seconds.
+    def upstream(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "plan_type": "prolite",
+                "rate_limit": {
+                    "allowed": True,
+                    "limit_reached": False,
+                    "primary_window": {
+                        "used_percent": 62,
+                        "limit_window_seconds": 604800,
+                        "reset_after_seconds": 5595,
+                        "reset_at": 1787519686,
+                    },
+                    "secondary_window": None,
+                },
+                "additional_rate_limits": [],
+            },
+        )
+
+    with broker_client(upstream) as client:
+        response = client.get("/usage", headers={"authorization": "Bearer scoped-client-token"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "source": "api",
+        "windows": [
+            {
+                "name": "primary",
+                "used_percent": 62.0,
+                "window_minutes": 10080,
+                "resets_in_seconds": 5595,
+            }
+        ],
+    }
+
+
 def test_usage_falls_back_to_rate_limit_headers_from_proxied_responses() -> None:
     def upstream(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/usage"):

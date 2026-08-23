@@ -27,6 +27,8 @@ from starlette.routing import Route
 
 CredentialResolver = Callable[..., dict[str, Any]]
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class BrokerSettings:
@@ -79,8 +81,9 @@ _USAGE_WINDOW_KEYS = (
     "window_duration_mins",
     "windowDurationMins",
 )
+_USAGE_WINDOW_SECONDS_KEYS = ("limit_window_seconds", "limitWindowSeconds")
 _USAGE_RESET_SECONDS_KEYS = ("resets_in_seconds", "resetsInSeconds", "reset_after_seconds")
-_USAGE_RESET_AT_KEYS = ("resets_at", "resetsAt")
+_USAGE_RESET_AT_KEYS = ("resets_at", "resetsAt", "reset_at", "resetAt")
 
 
 def _first_number(entry: dict[str, Any], keys: tuple[str, ...]) -> float | None:
@@ -98,6 +101,10 @@ def _usage_window(name: str, entry: Any, now: float) -> dict[str, Any] | None:
     if used_percent is None:
         return None
     window_minutes = _first_number(entry, _USAGE_WINDOW_KEYS)
+    if window_minutes is None:
+        window_seconds = _first_number(entry, _USAGE_WINDOW_SECONDS_KEYS)
+        if window_seconds is not None:
+            window_minutes = window_seconds / 60
     resets_in = _first_number(entry, _USAGE_RESET_SECONDS_KEYS)
     if resets_in is None:
         resets_at = _first_number(entry, _USAGE_RESET_AT_KEYS)
@@ -115,12 +122,18 @@ def _windows_from_usage_payload(payload: Any, now: float) -> list[dict[str, Any]
     """Tolerantly normalize the provider usage endpoint (snake_case or camelCase)."""
     if not isinstance(payload, dict):
         return []
-    container = payload.get("rate_limits") or payload.get("rateLimits") or payload
+    container = (
+        payload.get("rate_limits")
+        or payload.get("rateLimits")
+        or payload.get("rate_limit")
+        or payload.get("rateLimit")
+        or payload
+    )
     if not isinstance(container, dict):
         return []
     windows = []
     for name, entry in container.items():
-        window = _usage_window(str(name), entry, now)
+        window = _usage_window(str(name).removesuffix("_window").removesuffix("Window"), entry, now)
         if window is not None:
             windows.append(window)
     return windows
@@ -296,8 +309,13 @@ def create_app(
                     windows = _windows_from_usage_payload(upstream_response.json(), time.time())
                     if windows:
                         return JSONResponse({"source": "api", "windows": windows})
+                    logger.warning("usage probe returned 200 but no parseable windows")
+                else:
+                    logger.warning(
+                        "usage probe returned HTTP %s", upstream_response.status_code
+                    )
         except Exception as exc:  # noqa: BLE001 - a failed probe falls back to the header snapshot
-            logging.getLogger(__name__).warning("usage probe failed: %s", exc)
+            logger.warning("usage probe failed: %s", exc)
         snapshot = request.app.state.usage_headers
         if snapshot is not None:
             return JSONResponse(
