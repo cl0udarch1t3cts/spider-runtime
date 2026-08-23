@@ -8,6 +8,10 @@ services:
     ports:
       - "127.0.0.1:8646:3000"
     environment:
+      # Next standalone binds to $HOSTNAME; with two attached networks the
+      # container hostname resolves to only one interface, which may not be
+      # the one the published port forwards to. Bind everything.
+      HOSTNAME: 0.0.0.0
       EXECUTOR_API_URL: http://api:8000
       USAGE_URL: http://broker:8645/usage
       USAGE_TOKEN_FILE: /run/secrets/proxy-token
