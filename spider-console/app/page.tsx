@@ -331,6 +331,7 @@ export default function Dashboard() {
 
         <section className="panel wide">
           <h2>Doctor tasks</h2>
+          <div className="scroll">
           <table>
             <thead>
               <tr>
@@ -370,10 +371,12 @@ export default function Dashboard() {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
 
         <section className="panel wide">
           <h2>Execution runs</h2>
+          <div className="scroll">
           <table>
             <thead>
               <tr>
@@ -416,6 +419,7 @@ export default function Dashboard() {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
 
         <section className="panel wide">
