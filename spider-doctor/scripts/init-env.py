@@ -28,9 +28,16 @@ def main() -> int:
     socket = Path("/var/run/docker.sock")
     if not socket.exists() or not stat.S_ISSOCK(socket.stat().st_mode):
         raise SystemExit("Docker socket is unavailable")
-    scripts = ROOT.parent / "spider-scripts"
-    if not (scripts / ".git").is_dir():
-        raise SystemExit(f"sibling spider-scripts checkout is unavailable: {scripts}")
+    # spider-scripts sits next to the spider-runtime monorepo, one level above
+    # this service directory; the direct-sibling fallback covers pre-monorepo
+    # checkouts.
+    candidates = [ROOT.parent.parent / "spider-scripts", ROOT.parent / "spider-scripts"]
+    scripts = next((c for c in candidates if (c / ".git").is_dir()), None)
+    if scripts is None:
+        raise SystemExit(
+            "spider-scripts checkout is unavailable; looked in: "
+            + ", ".join(str(c) for c in candidates)
+        )
 
     text = (ROOT / ".env.example").read_text()
     values = {

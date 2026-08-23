@@ -90,7 +90,7 @@ def test_example_environment_contains_settings_not_credentials() -> None:
     text = (ROOT / ".env.example").read_text()
 
     assert "SPIDER_DOCTOR_HERMES_DIGEST=sha256:" in text
-    assert "SPIDER_DOCTOR_HOST_ROOT=/home/spider/projects/spider-doctor" in text
+    assert "SPIDER_DOCTOR_HOST_ROOT=/home/spider/projects/spider-runtime/spider-doctor" in text
     assert "SPIDER_SCRIPTS_HOST_PATH=/home/spider/projects/spider-scripts" in text
     assert "TOKEN=" not in text
     assert "PASSWORD=" not in text
