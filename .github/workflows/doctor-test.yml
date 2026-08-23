@@ -1,12 +1,22 @@
-name: test
+name: doctor-test
 
 on:
   push:
     branches: [main]
+    paths:
+      - "spider-doctor/**"
+      - ".github/workflows/doctor-test.yml"
   pull_request:
+    paths:
+      - "spider-doctor/**"
+      - ".github/workflows/doctor-test.yml"
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    working-directory: spider-doctor
 
 jobs:
   test:

@@ -1,12 +1,22 @@
-name: test
+name: executor-test
 
 on:
   push:
     branches: [main]
+    paths:
+      - "spider-executor/**"
+      - ".github/workflows/executor-test.yml"
   pull_request:
+    paths:
+      - "spider-executor/**"
+      - ".github/workflows/executor-test.yml"
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    working-directory: spider-executor
 
 jobs:
   test:
