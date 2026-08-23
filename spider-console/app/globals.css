@@ -96,28 +96,29 @@ h2 {
 .counts {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  align-items: baseline;
+  gap: 0.3rem 1.1rem;
 }
 
 .count {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.4rem 0.8rem;
-  min-width: 90px;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
 }
 
 .count .value {
   font-family: var(--font-brand), sans-serif;
-  font-size: 1.3rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--brand-light);
 }
 
 .count .label {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  white-space: nowrap;
 }
 
 table {
@@ -158,12 +159,12 @@ td {
 
 .bar {
   position: relative;
-  height: 22px;
+  height: 16px;
   background: #0a0e14;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
-  margin: 0.5rem 0;
+  margin: 0.35rem 0;
 }
 
 .bar .fill {
