@@ -10,7 +10,7 @@ WAIT         := --wait --wait-timeout 180
 
 .DEFAULT_GOAL := help
 
-.PHONY: help status health up start-doctor stop stop-doctor stop-doctor-stack \
+.PHONY: help status health usage up start-doctor stop stop-doctor stop-doctor-stack \
 	stop-executor-apps down restart-doctor restart-worker restart-api \
 	restart-runner restart-mongo restart-all pull update update-doctor \
 	logs logs-executor logs-doctor tail tail-doctor tail-worker tail-runner tail-proxy
@@ -27,6 +27,12 @@ status: ## Show container status of both stacks
 
 health: ## Check the Executor readiness endpoint
 	curl --fail-with-body $(HEALTH_URL)
+
+usage: ## Show current subscription usage via the broker (budget gate source)
+	@cd $(DOCTOR_DIR) && docker compose exec doctor python3 -c 'import os, json, urllib.request; \
+		token = open(os.environ["SPIDER_DOCTOR_PROXY_TOKEN_FILE"]).read().strip(); \
+		req = urllib.request.Request("http://broker:8645/usage", headers={"Authorization": "Bearer " + token}); \
+		print(json.dumps(json.load(urllib.request.urlopen(req, timeout=60)), indent=2))'
 
 # --- start -------------------------------------------------------------------
 
