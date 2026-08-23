@@ -1,0 +1,27 @@
+###############################################################################
+### dory-und-du-baden
+###############################################################################
+PUT http://127.0.0.1:8000/api/v1/entries/dory-und-du-baden
+Content-Type: application/json
+
+{
+  "name": "DORY & DU",
+  "website": "https://doryunddu.ch",
+  "scraper_release": "a96ce24c9028669507e83d1341989ede9190afe1",
+  "validation": {
+    "required_fields": [
+      "NAME",
+      "EMAIL",
+      "PHONE_NUMBER"
+    ],
+    "allowed_null_fields": [
+      "MENU"
+    ],
+    "minimum_non_null_fields": 6,
+    "allowed_source_hosts": [
+      "doryunddu.ch",
+      "www.doryunddu.ch"
+    ]
+  }
+}
+###
