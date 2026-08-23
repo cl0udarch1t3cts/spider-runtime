@@ -87,6 +87,12 @@ services:
       SPIDER_DOCTOR_DOCKER_NETWORK: ${SPIDER_DOCTOR_NETWORK:-spider-doctor-egress}
       SPIDER_DOCTOR_EGRESS_PROXY_URL: http://spider-doctor-egress-proxy:3128
       SPIDER_DOCTOR_PUBLICATION_BRANCH: ${SPIDER_DOCTOR_PUBLICATION_BRANCH:-main}
+      # Subscription budget gate: pace the weekly contingent at 10%/day for
+      # jobs, keeping 30% reserved for interactive development. Raise these
+      # via .env after a subscription upgrade.
+      SPIDER_DOCTOR_BROKER_USAGE_URL: http://broker:8645/usage
+      SPIDER_DOCTOR_BUDGET_DAILY_PERCENT: ${SPIDER_DOCTOR_BUDGET_DAILY_PERCENT:-10}
+      SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT: ${SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT:-30}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${SPIDER_DOCTOR_HOST_ROOT:?set the absolute Doctor checkout path}/data/workspaces:${SPIDER_DOCTOR_HOST_ROOT}/data/workspaces:rw

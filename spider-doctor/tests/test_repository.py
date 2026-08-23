@@ -219,3 +219,34 @@ def test_claim_ignores_noneligible_operational_failure() -> None:
     collection.insert_one(document)
 
     assert MongoDoctorTaskRepository(collection).claim("doctor-1") is None
+
+
+def test_release_requeues_without_consuming_the_attempt() -> None:
+    collection = mongomock.MongoClient().spider.doctor_tasks
+    collection.insert_one(queued_task("deferred"))
+    repo = MongoDoctorTaskRepository(collection)
+    claimed = repo.claim("doctor-1", lease_for=timedelta(minutes=5))
+    assert claimed is not None and claimed.attempts == 1
+
+    released = repo.release(
+        claimed.id, claimed.lease.token, retry_after=timedelta(minutes=30)
+    )
+
+    assert released
+    document = collection.find_one({"_id": "deferred"})
+    assert document["status"] == "queued"
+    assert document["attempts"] == 0
+    assert document["lease"] is None
+    available_at = document["available_at"].replace(tzinfo=UTC)
+    assert available_at > datetime.now(UTC) + timedelta(minutes=20)
+    assert repo.claim("doctor-1") is None
+
+
+def test_release_refuses_a_lost_lease() -> None:
+    collection = mongomock.MongoClient().spider.doctor_tasks
+    collection.insert_one(queued_task("deferred"))
+    repo = MongoDoctorTaskRepository(collection)
+    claimed = repo.claim("doctor-1", lease_for=timedelta(minutes=5))
+
+    assert not repo.release(claimed.id, "stale-token")
+    assert collection.find_one({"_id": "deferred"})["status"] == "running"

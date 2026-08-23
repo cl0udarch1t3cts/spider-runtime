@@ -127,6 +127,88 @@ def test_broker_refreshes_once_after_upstream_401() -> None:
     assert upstream_calls == 2
 
 
+def test_usage_requires_the_scoped_client_token() -> None:
+    def must_not_run(_request):
+        raise AssertionError("upstream must not be called")
+
+    with broker_client(must_not_run) as client:
+        response = client.get("/usage", headers={"authorization": "Bearer wrong"})
+
+    assert response.status_code == 401
+
+
+def test_usage_probes_the_provider_endpoint_and_normalizes_field_names() -> None:
+    def upstream(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://chatgpt.com/backend-api/codex/usage"
+        assert request.headers["authorization"] == "Bearer upstream-oauth-token"
+        return httpx.Response(
+            200,
+            json={
+                "rate_limits": {
+                    "primary": {"usedPercent": 12.5, "windowDurationMins": 300, "resetsInSeconds": 900},
+                    "secondary": {"usedPercent": 33.0, "windowDurationMins": 10080, "resetsInSeconds": 400000},
+                }
+            },
+        )
+
+    with broker_client(upstream) as client:
+        response = client.get("/usage", headers={"authorization": "Bearer scoped-client-token"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "source": "api",
+        "windows": [
+            {"name": "primary", "used_percent": 12.5, "window_minutes": 300, "resets_in_seconds": 900},
+            {"name": "secondary", "used_percent": 33.0, "window_minutes": 10080, "resets_in_seconds": 400000},
+        ],
+    }
+
+
+def test_usage_falls_back_to_rate_limit_headers_from_proxied_responses() -> None:
+    def upstream(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/usage"):
+            return httpx.Response(404)
+        return httpx.Response(
+            200,
+            headers={
+                "content-type": "application/json",
+                "x-codex-primary-used-percent": "7.0",
+                "x-codex-secondary-used-percent": "21.5",
+                "x-codex-secondary-window-minutes": "10080",
+                "x-codex-secondary-resets-in-seconds": "300000",
+            },
+            stream=httpx.ByteStream(b'{"id":"ok"}'),
+        )
+
+    with broker_client(upstream) as client:
+        client.post(
+            "/v1/responses",
+            headers={"authorization": "Bearer scoped-client-token"},
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+        response = client.get("/usage", headers={"authorization": "Bearer scoped-client-token"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "headers"
+    assert payload["windows"] == [
+        {"name": "primary", "used_percent": 7.0, "window_minutes": None, "resets_in_seconds": None},
+        {
+            "name": "secondary",
+            "used_percent": 21.5,
+            "window_minutes": 10080,
+            "resets_in_seconds": 300000,
+        },
+    ]
+
+
+def test_usage_reports_unavailable_when_no_source_exists() -> None:
+    with broker_client(lambda _request: httpx.Response(404)) as client:
+        response = client.get("/usage", headers={"authorization": "Bearer scoped-client-token"})
+
+    assert response.status_code == 503
+
+
 def test_broker_releases_concurrency_slot_when_stream_raises() -> None:
     class BrokenStream(httpx.AsyncByteStream):
         async def __aiter__(self):

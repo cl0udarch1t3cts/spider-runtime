@@ -611,6 +611,45 @@ python3 scripts/preflight.py
 
 Preflight must pass before Doctor processes untrusted task work.
 
+## Subscription budget gate
+
+Before every fresh Hermes launch the Doctor checks current subscription usage
+against a paced budget: the weekly contingent is allotted at
+`SPIDER_DOCTOR_BUDGET_DAILY_PERCENT` (default 10%) per day for jobs, hard-capped
+so `SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT` (default 30%) always stays free for
+interactive development. Usage comes from the broker's `/usage` endpoint, which
+live-probes the provider usage API and falls back to the rate-limit headers of
+the most recent proxied response. If usage cannot be determined the gate fails
+open (a broker outage must not stall repairs).
+
+Every decision is logged by the Doctor:
+
+```text
+Doctor budget decision: proceed (usage 23.4% of 30.0% allowed via api; day 3/7 ...)
+Doctor budget defer task=... retry_in=0:30:00 released=True: usage 41.0% of 40.0% allowed ...
+```
+
+A deferred task is returned to the queue without consuming an attempt and
+becomes available again after `SPIDER_DOCTOR_BUDGET_RETRY_MINUTES` (default 30).
+Publishing an already-persisted candidate spends no subscription budget and is
+never gated.
+
+Inspect current usage manually (the broker is not published on the host):
+
+```bash
+cd /home/spider/projects/spider-runtime/spider-doctor
+docker compose exec doctor python3 -c '
+import os, urllib.request
+token = open(os.environ["SPIDER_DOCTOR_PROXY_TOKEN_FILE"]).read().strip()
+req = urllib.request.Request("http://broker:8645/usage", headers={"Authorization": "Bearer " + token})
+print(urllib.request.urlopen(req, timeout=60).read().decode())
+'
+```
+
+After a subscription upgrade, raise the budget in the Doctor `.env`
+(`SPIDER_DOCTOR_BUDGET_DAILY_PERCENT`, `SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT`)
+and restart the Doctor service.
+
 ## Task egress network
 
 ```bash

@@ -7,6 +7,7 @@ import binascii
 import hmac
 import importlib
 import json
+import logging
 import os
 import time
 from collections import deque
@@ -71,6 +72,83 @@ def _account_id(access_token: str) -> str | None:
         return None
 
 
+_USAGE_USED_KEYS = ("used_percent", "usedPercent")
+_USAGE_WINDOW_KEYS = (
+    "window_minutes",
+    "windowMinutes",
+    "window_duration_mins",
+    "windowDurationMins",
+)
+_USAGE_RESET_SECONDS_KEYS = ("resets_in_seconds", "resetsInSeconds", "reset_after_seconds")
+_USAGE_RESET_AT_KEYS = ("resets_at", "resetsAt")
+
+
+def _first_number(entry: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        value = entry.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return None
+
+
+def _usage_window(name: str, entry: Any, now: float) -> dict[str, Any] | None:
+    if not isinstance(entry, dict):
+        return None
+    used_percent = _first_number(entry, _USAGE_USED_KEYS)
+    if used_percent is None:
+        return None
+    window_minutes = _first_number(entry, _USAGE_WINDOW_KEYS)
+    resets_in = _first_number(entry, _USAGE_RESET_SECONDS_KEYS)
+    if resets_in is None:
+        resets_at = _first_number(entry, _USAGE_RESET_AT_KEYS)
+        if resets_at is not None:
+            resets_in = max(0.0, resets_at - now)
+    return {
+        "name": name,
+        "used_percent": used_percent,
+        "window_minutes": int(window_minutes) if window_minutes is not None else None,
+        "resets_in_seconds": int(resets_in) if resets_in is not None else None,
+    }
+
+
+def _windows_from_usage_payload(payload: Any, now: float) -> list[dict[str, Any]]:
+    """Tolerantly normalize the provider usage endpoint (snake_case or camelCase)."""
+    if not isinstance(payload, dict):
+        return []
+    container = payload.get("rate_limits") or payload.get("rateLimits") or payload
+    if not isinstance(container, dict):
+        return []
+    windows = []
+    for name, entry in container.items():
+        window = _usage_window(str(name), entry, now)
+        if window is not None:
+            windows.append(window)
+    return windows
+
+
+def _windows_from_headers(headers: httpx.Headers) -> list[dict[str, Any]]:
+    """Extract the rate-limit snapshot attached to proxied Codex responses."""
+    windows = []
+    for name in ("primary", "secondary"):
+        entry: dict[str, Any] = {}
+        for field, header in (
+            ("used_percent", f"x-codex-{name}-used-percent"),
+            ("window_minutes", f"x-codex-{name}-window-minutes"),
+            ("resets_in_seconds", f"x-codex-{name}-resets-in-seconds"),
+        ):
+            raw = headers.get(header)
+            if raw is None:
+                continue
+            try:
+                entry[field] = float(raw)
+            except ValueError:
+                continue
+        window = _usage_window(name, entry, time.time())
+        if window is not None:
+            windows.append(window)
+    return windows
+
+
 def _upstream_headers(access_token: str) -> dict[str, str]:
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -98,6 +176,7 @@ def create_app(
     async def lifespan(app: Starlette):
         timeout = httpx.Timeout(1900.0, connect=20.0, pool=5.0)
         app.state.upstream = httpx.AsyncClient(transport=upstream_transport, timeout=timeout)
+        app.state.usage_headers = None
         yield
         await app.state.upstream.aclose()
 
@@ -164,6 +243,12 @@ def create_app(
                     break
                 await current.aclose()
             assert response is not None
+            snapshot = _windows_from_headers(response.headers)
+            if snapshot:
+                request.app.state.usage_headers = {
+                    "windows": snapshot,
+                    "captured_at": time.time(),
+                }
             headers = {}
             for name in ("content-type", "x-request-id", "openai-processing-ms"):
                 if name in response.headers:
@@ -190,10 +275,45 @@ def create_app(
             if not handed_off:
                 concurrency.release()
 
+    async def usage(request: Request) -> Response:
+        supplied = request.headers.get("authorization", "")
+        expected = f"Bearer {settings.client_token}"
+        if not hmac.compare_digest(supplied, expected):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        # Prefer a live probe of the provider usage endpoint; fall back to the
+        # rate-limit snapshot captured from the most recent proxied response.
+        try:
+            credentials = await run_in_threadpool(credential_resolver, force_refresh=False)
+            token = str(credentials.get("api_key", "") or "").strip()
+            base_url = str(credentials.get("base_url", "") or "").rstrip("/")
+            if token and base_url == "https://chatgpt.com/backend-api/codex":
+                upstream_response = await request.app.state.upstream.get(
+                    f"{base_url}/usage",
+                    headers=_upstream_headers(token),
+                    timeout=httpx.Timeout(30.0, connect=20.0),
+                )
+                if upstream_response.status_code == 200:
+                    windows = _windows_from_usage_payload(upstream_response.json(), time.time())
+                    if windows:
+                        return JSONResponse({"source": "api", "windows": windows})
+        except Exception as exc:  # noqa: BLE001 - a failed probe falls back to the header snapshot
+            logging.getLogger(__name__).warning("usage probe failed: %s", exc)
+        snapshot = request.app.state.usage_headers
+        if snapshot is not None:
+            return JSONResponse(
+                {
+                    "source": "headers",
+                    "age_seconds": int(time.time() - snapshot["captured_at"]),
+                    "windows": snapshot["windows"],
+                }
+            )
+        return JSONResponse({"error": "usage unavailable"}, status_code=503)
+
     return Starlette(
         routes=[
             Route("/health/live", health, methods=["GET"]),
             Route("/health/ready", ready, methods=["GET"]),
+            Route("/usage", usage, methods=["GET"]),
             Route("/v1/responses", responses, methods=["POST"]),
         ],
         lifespan=lifespan,

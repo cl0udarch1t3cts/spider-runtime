@@ -179,6 +179,38 @@ class MongoDoctorTaskRepository:
         )
         return DoctorTask.model_validate(document) if document else None
 
+    def release(
+        self,
+        task_id: str,
+        lease_token: str,
+        *,
+        now: datetime | None = None,
+        retry_after: timedelta = timedelta(minutes=30),
+    ) -> bool:
+        """Return a claimed generation task to the queue without consuming
+        the attempt claim() charged for it. Deferrals (e.g. the subscription
+        budget gate) are not failures and must not eat the retry budget."""
+        now = now or datetime.now(UTC)
+        outcome = self.collection.update_one(
+            {
+                "_id": task_id,
+                "status": str(DoctorStatus.RUNNING),
+                "lease.token": lease_token,
+                "lease.expires_at": {"$gt": now},
+                "candidate_sha": {"$exists": False},
+            },
+            {
+                "$set": {
+                    "status": str(DoctorStatus.QUEUED),
+                    "lease": None,
+                    "available_at": now + retry_after,
+                    "updated_at": now,
+                },
+                "$inc": {"attempts": -1},
+            },
+        )
+        return outcome.modified_count == 1
+
     def record_candidate(
         self,
         task_id: str,

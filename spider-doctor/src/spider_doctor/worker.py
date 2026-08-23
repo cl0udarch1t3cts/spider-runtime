@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import timedelta
 from pathlib import Path
 from typing import Protocol
 
+from spider_doctor.budget import BudgetDecision
 from spider_doctor.models import DoctorResult, DoctorStatus, DoctorTask
+
+logger = logging.getLogger(__name__)
 
 
 class Repository(Protocol):
     def claim(self, worker_id: str, *, lease_for: timedelta) -> DoctorTask | None: ...
+    def release(
+        self, task_id: str, lease_token: str, *, retry_after: timedelta
+    ) -> bool: ...
     def record_candidate(
         self, task_id: str, lease_token: str, candidate_sha: str, result: dict
     ) -> bool: ...
@@ -46,6 +53,10 @@ class Publisher(Protocol):
     def publish(self, workspace: Path, candidate_sha: str) -> None: ...
 
 
+class BudgetGate(Protocol):
+    def check(self) -> BudgetDecision: ...
+
+
 class DoctorWorker:
     def __init__(
         self,
@@ -58,6 +69,8 @@ class DoctorWorker:
         worker_id: str,
         task_root: Path,
         lease_for: timedelta = timedelta(minutes=30),
+        budget_gate: BudgetGate | None = None,
+        budget_retry_after: timedelta = timedelta(minutes=30),
     ) -> None:
         self.repository = repository
         self.evidence_loader = evidence_loader
@@ -67,6 +80,8 @@ class DoctorWorker:
         self.worker_id = worker_id
         self.task_root = task_root.resolve()
         self.lease_for = lease_for
+        self.budget_gate = budget_gate
+        self.budget_retry_after = budget_retry_after
 
     def process_one(self) -> DoctorResult | None:
         task = self.repository.claim(self.worker_id, lease_for=self.lease_for)
@@ -74,6 +89,24 @@ class DoctorWorker:
             return None
         if task.lease is None:
             raise RuntimeError("claimed Doctor task has no lease")
+
+        # Publishing an already-persisted candidate spends no subscription
+        # budget, so only a fresh Hermes launch consults the gate.
+        if task.candidate_sha is None and self.budget_gate is not None:
+            decision = self.budget_gate.check()
+            if not decision.allowed:
+                released = self.repository.release(
+                    task.id, task.lease.token, retry_after=self.budget_retry_after
+                )
+                logger.warning(
+                    "Doctor budget defer task=%s retry_in=%s released=%s: %s",
+                    task.id,
+                    self.budget_retry_after,
+                    released,
+                    decision.detail,
+                )
+                return None
+            logger.info("Doctor budget proceed task=%s: %s", task.id, decision.detail)
 
         try:
             if task.candidate_sha:

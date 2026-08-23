@@ -210,3 +210,100 @@ def test_agent_result_schema_exposes_only_untrusted_terminal_statuses() -> None:
         status_schema = schema["$defs"][status_schema["$ref"].rsplit("/", 1)[-1]]
 
     assert set(status_schema["enum"]) == {"awaiting_review", "failed"}
+
+
+class FakeBudgetGate:
+    def __init__(self, allowed: bool) -> None:
+        self.allowed = allowed
+        self.checks = 0
+
+    def check(self):
+        from spider_doctor.budget import BudgetDecision
+
+        self.checks += 1
+        return BudgetDecision(self.allowed, "usage 12.0% of 10.0% allowed via api")
+
+
+class MustNotLaunch:
+    def run(self, task, *, workspace, task_file, output_dir):
+        raise AssertionError("Hermes must not be launched while over budget")
+
+
+def test_budget_defer_releases_the_task_without_launching_hermes(tmp_path: Path) -> None:
+    class ReleasingRepository(FakeRepository):
+        def __init__(self, task):
+            super().__init__(task)
+            self.released = None
+
+        def release(self, task_id, lease_token, *, retry_after):
+            self.released = (task_id, lease_token, retry_after)
+            return True
+
+    repository = ReleasingRepository(running_task())
+    gate = FakeBudgetGate(allowed=False)
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        MustNotLaunch(),
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+        budget_gate=gate,
+        budget_retry_after=timedelta(minutes=45),
+    )
+
+    result = worker.process_one()
+
+    assert result is None
+    assert gate.checks == 1
+    assert repository.released == ("task-1", "token", timedelta(minutes=45))
+    assert repository.failed is None
+    assert repository.candidate is None
+
+
+def test_budget_proceed_launches_hermes_normally(tmp_path: Path) -> None:
+    repository = FakeRepository(running_task())
+    gate = FakeBudgetGate(allowed=True)
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        FakeLauncher(),
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+        budget_gate=gate,
+    )
+
+    result = worker.process_one()
+
+    assert result.status == DoctorStatus.AWAITING_REVIEW
+    assert gate.checks == 1
+    assert repository.published is not None
+
+
+def test_candidate_publication_skips_the_budget_gate(tmp_path: Path) -> None:
+    class MustNotCheck:
+        def check(self):
+            raise AssertionError("publication of a persisted candidate spends no budget")
+
+    task = running_task()
+    task.candidate_sha = "c" * 40
+    task.candidate_result = {"status": "awaiting_review", "summary": "fixed"}
+    repository = FakeRepository(task)
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        MustNotLaunch(),
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+        budget_gate=MustNotCheck(),
+    )
+
+    result = worker.process_one()
+
+    assert result.status == DoctorStatus.AWAITING_REVIEW
+    assert repository.published == ("task-1", "token", "c" * 40)
