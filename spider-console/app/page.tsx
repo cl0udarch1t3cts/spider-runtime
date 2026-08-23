@@ -147,7 +147,17 @@ export default function Dashboard() {
   return (
     <main>
       <div className="header">
-        <h1>SPIDER CONSOLE</h1>
+        <div className="brand">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="Cloud Architects" width={30} height={30} />
+          <div>
+            <h1>SPIDER CONSOLE</h1>
+            <span className="tagline">
+              Cloud Architects GmbH · Cloud-Native Software &amp; Architecture
+              Experts
+            </span>
+          </div>
+        </div>
         <span className="meta">
           refreshed {ago(data.generatedAt)}
           {error ? <span className="error"> — {error}</span> : null}

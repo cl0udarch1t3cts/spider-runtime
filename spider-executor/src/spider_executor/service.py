@@ -505,9 +505,22 @@ class MongoControlService:
             for document in self.db.entries.find().sort("updated_at", DESCENDING)
         ]
 
-    def list_recent_runs(self, limit: int = 50) -> list[ExecutionRun]:
+    def list_recent_runs(self, limit: int = 50) -> list[dict]:
+        # View dicts, not ExecutionRun models: legacy run documents (e.g.
+        # missing entry_id) must still be listable.
         return [
-            _decode(ExecutionRun, document, id_field=True)
+            {
+                "id": str(document["_id"]),
+                "job_id": document.get("job_id"),
+                "entry_id": document.get("entry_id"),
+                "scraper_release": document.get("scraper_release"),
+                "status": document.get("status"),
+                "failure_class": document.get("failure_class"),
+                "record_id": document.get("record_id"),
+                "errors": [str(error) for error in document.get("errors") or []],
+                "started_at": document.get("started_at"),
+                "finished_at": document.get("finished_at"),
+            }
             for document in self.db.execution_runs.find()
             .sort("started_at", DESCENDING)
             .limit(limit)

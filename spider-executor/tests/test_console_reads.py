@@ -6,7 +6,7 @@ import mongomock
 from fastapi.testclient import TestClient
 
 from spider_executor.api import create_app
-from spider_executor.models import ExecutionRun, JobStatus
+from spider_executor.models import JobStatus
 from spider_executor.service import MongoControlService
 
 
@@ -38,20 +38,22 @@ def seeded_service() -> MongoControlService:
         ]
     )
     for index in range(4):
-        db.execution_runs.insert_one(
-            {
-                "_id": f"job-{index}:1",
-                "job_id": f"job-{index}",
-                "entry_id": f"entry-{index % 2}",
-                "scraper_release": "a" * 40,
-                "status": "succeeded" if index % 2 == 0 else "failed",
-                "failure_class": None,
-                "record_id": None,
-                "errors": [],
-                "started_at": now + timedelta(minutes=index),
-                "finished_at": now + timedelta(minutes=index, seconds=30),
-            }
-        )
+        run = {
+            "_id": f"job-{index}:1",
+            "job_id": f"job-{index}",
+            "entry_id": f"entry-{index % 2}",
+            "scraper_release": "a" * 40,
+            "status": "succeeded" if index % 2 == 0 else "failed",
+            "failure_class": None,
+            "record_id": None,
+            "errors": [],
+            "started_at": now + timedelta(minutes=index),
+            "finished_at": now + timedelta(minutes=index, seconds=30),
+        }
+        if index == 0:
+            # Legacy shape without entry_id must not break listing.
+            del run["entry_id"]
+        db.execution_runs.insert_one(run)
     db.records.insert_one({"_id": "job-0:1", "run_id": "job-0:1", "slug": "entry-0"})
     db.doctor_tasks.insert_many(
         [
@@ -115,7 +117,18 @@ def test_service_lists_recent_runs_across_entries_with_limit() -> None:
 
     runs = service.list_recent_runs(limit=2)
 
-    assert [run.id for run in runs] == ["job-3:1", "job-2:1"]
+    assert [run["id"] for run in runs] == ["job-3:1", "job-2:1"]
+
+
+def test_service_run_listing_tolerates_legacy_documents_without_entry_id() -> None:
+    service = seeded_service()
+
+    runs = service.list_recent_runs(limit=10)
+
+    legacy = runs[-1]
+    assert legacy["id"] == "job-0:1"
+    assert legacy["entry_id"] is None
+    assert legacy["status"] == "succeeded"
 
 
 def test_service_lists_doctor_tasks_newest_first_without_lease_token() -> None:
@@ -166,14 +179,18 @@ class ConsoleFakeControl:
     def list_recent_runs(self, limit: int):
         self.requested_limits.append(limit)
         return [
-            ExecutionRun(
-                id="job-0:1",
-                job_id="job-0",
-                entry_id="entry-0",
-                scraper_release="a" * 40,
-                status=JobStatus.SUCCEEDED,
-                started_at=self.now,
-            )
+            {
+                "id": "job-0:1",
+                "job_id": "job-0",
+                "entry_id": "entry-0",
+                "scraper_release": "a" * 40,
+                "status": "succeeded",
+                "failure_class": None,
+                "record_id": None,
+                "errors": [],
+                "started_at": self.now,
+                "finished_at": None,
+            }
         ]
 
     def list_doctor_tasks(self, limit: int):

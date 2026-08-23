@@ -28,7 +28,7 @@ class Control(Protocol):
     def register(self, entry_id: str, businessname: str, address: str) -> dict: ...
 
     def list_entries(self) -> list[dict]: ...
-    def list_recent_runs(self, limit: int) -> list[ExecutionRun]: ...
+    def list_recent_runs(self, limit: int) -> list[dict]: ...
     def list_doctor_tasks(self, limit: int) -> list[dict]: ...
     def stats(self) -> dict: ...
 
@@ -85,6 +85,19 @@ class DoctorTaskView(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     lease: DoctorLeaseView | None = None
+
+
+class RunView(BaseModel):
+    id: str
+    job_id: str | None = None
+    entry_id: str | None = None
+    scraper_release: str | None = None
+    status: str | None = None
+    failure_class: str | None = None
+    record_id: str | None = None
+    errors: list[str] = Field(default_factory=list)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 class OverviewStats(BaseModel):
@@ -160,8 +173,8 @@ def create_app(control: Control) -> FastAPI:
     def list_entries() -> list[dict]:
         return control.list_entries()
 
-    @app.get("/api/v1/runs", response_model=list[ExecutionRun])
-    def list_recent_runs(limit: int = Query(default=50, ge=1, le=200)) -> list[ExecutionRun]:
+    @app.get("/api/v1/runs", response_model=list[RunView])
+    def list_recent_runs(limit: int = Query(default=50, ge=1, le=200)) -> list[dict]:
         return control.list_recent_runs(limit)
 
     @app.get("/api/v1/doctor-tasks", response_model=list[DoctorTaskView])

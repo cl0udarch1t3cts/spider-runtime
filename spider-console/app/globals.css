@@ -1,13 +1,16 @@
+/* Cloud Architects brand: #151817 dark, #4c3ed6/#5b4de5 primary, #998eff accent */
 :root {
-  --bg: #0d1117;
-  --panel: #161b22;
-  --border: #30363d;
-  --text: #e6edf3;
-  --muted: #8b949e;
+  --bg: #151817;
+  --panel: #1b1f1d;
+  --border: #2b302d;
+  --text: #f2f2f0;
+  --muted: #8f948f;
   --green: #3fb950;
   --amber: #d29922;
   --red: #f85149;
-  --blue: #58a6ff;
+  --blue: #998eff;
+  --brand: #5b4de5;
+  --brand-light: #998eff;
 }
 
 * {
@@ -26,23 +29,45 @@ body {
 }
 
 h1 {
-  font-size: 1.1rem;
-  letter-spacing: 0.05em;
+  font-family: var(--font-brand), sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 h2 {
+  font-family: var(--font-brand), sans-serif;
   font-size: 0.8rem;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
+  letter-spacing: 0.12em;
+  color: var(--brand-light);
   margin-bottom: 0.6rem;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--brand);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.brand img {
+  border-radius: 4px;
+}
+
+.tagline {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.03em;
 }
 
 .meta {
@@ -82,8 +107,10 @@ h2 {
 }
 
 .count .value {
+  font-family: var(--font-brand), sans-serif;
   font-size: 1.3rem;
   font-weight: 700;
+  color: var(--brand-light);
 }
 
 .count .label {
@@ -141,7 +168,7 @@ td {
 
 .bar .fill {
   height: 100%;
-  background: var(--green);
+  background: var(--brand);
 }
 
 .bar .fill.warn { background: var(--amber); }
