@@ -101,7 +101,7 @@ def test_registration_correction_fails_closed_while_task_is_running() -> None:
     assert entry.address == "Bern"
 
 
-def test_execution_enqueue_fails_closed_for_non_active_prototype_entry() -> None:
+def test_execution_enqueue_fails_closed_for_entry_without_activation_record() -> None:
     service = MongoControlService(mongomock.MongoClient().spider)
     service.put_entry(
         Entry(entry_id="business-1", businessname="First", address="Bern", scraper_release="a" * 40)
@@ -113,7 +113,12 @@ def test_execution_enqueue_fails_closed_for_non_active_prototype_entry() -> None
         {"_id": "activated_entry", "entry_id": "business-1", "scraper_release": "a" * 40}
     )
 
-    with pytest.raises(RuntimeError, match="only one activated entry"):
+    # business-1 is authorized by the legacy singleton activation record;
+    # business-2 has a release on the entry but no activation, so it fails closed.
+    assert service.enqueue(
+        ExecutionJob(entry_id="business-1", idempotency_key="manual:1")
+    ).scraper_release == "a" * 40
+    with pytest.raises(RuntimeError, match="activated scraper release"):
         service.enqueue(ExecutionJob(entry_id="business-2", idempotency_key="manual:2"))
 
 

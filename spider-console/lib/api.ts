@@ -45,6 +45,18 @@ export async function fetchRecord(recordId: string) {
   );
 }
 
+export async function fetchLatestRecordId(
+  entryId: string,
+): Promise<string | null> {
+  const runs = await executorGet<
+    { record_id: string | null; status: string; started_at: string }[]
+  >(`/api/v1/entries/${encodeURIComponent(entryId)}/runs`);
+  const latest = runs
+    .filter((run) => run.status === "succeeded" && run.record_id)
+    .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
+  return latest?.record_id ?? null;
+}
+
 export async function enqueueExecution(entryId: string): Promise<{
   ok: boolean;
   status: number;

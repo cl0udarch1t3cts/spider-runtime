@@ -11729,3 +11729,18 @@ Run these commands on `spider-01`. Each request is asynchronous and creates or r
   }
   JSON
   ```
+
+- [ ] `PQcEs0yix_K3zWtk40Kmkg` — DORY & DU — Limmatpromenade 27, 5400 Baden
+
+  ```bash
+  curl --fail-with-body -sS \
+    -X POST http://127.0.0.1:8000/api/v1/register \
+    -H 'content-type: application/json' \
+    --data-binary @- <<'JSON'
+  {
+    "entry_id": "PQcEs0yix_K3zWtk40Kmkg",
+    "businessname": "DORY & DU",
+    "address": "Limmatpromenade 27, 5400 Baden"
+  }
+  JSON
+  ```

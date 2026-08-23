@@ -133,6 +133,29 @@ export default function Dashboard() {
   const [pinnedRecord, setPinnedRecord] = useState(false);
   const [fetchNote, setFetchNote] = useState<string | null>(null);
 
+  const showData = async (entryId: string) => {
+    try {
+      const response = await fetch(
+        `/api/entry-record/${encodeURIComponent(entryId)}`,
+      );
+      const body = (await response.json()) as {
+        recordId?: string | null;
+        error?: string;
+      };
+      if (body.recordId) {
+        setPinnedRecord(true);
+        setRecordId(body.recordId);
+        setFetchNote(null);
+      } else {
+        setFetchNote(
+          body.error ?? `${entryId}: no scraped record yet — fetch it first`,
+        );
+      }
+    } catch (exc) {
+      setFetchNote(`${entryId}: ${String(exc)}`);
+    }
+  };
+
   const triggerFetch = async (entryId: string) => {
     setFetchNote(`enqueueing ${entryId}…`);
     try {
@@ -478,6 +501,13 @@ export default function Dashboard() {
                       onClick={() => triggerFetch(entry.id)}
                     >
                       fetch
+                    </button>{" "}
+                    <button
+                      className="action secondary"
+                      title="Show this entry's latest scraped record"
+                      onClick={() => showData(entry.id)}
+                    >
+                      data
                     </button>
                   </td>
                 </tr>

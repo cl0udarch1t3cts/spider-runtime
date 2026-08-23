@@ -91,8 +91,39 @@ class MongoControlService:
         self.release_provider = release_provider
         self.provisioner = provisioner
 
+    @staticmethod
+    def _activation_key(entry_id: str) -> str:
+        return f"activated_entry:{entry_id}"
+
+    def _get_activation(self, entry_id: str, session=None) -> dict | None:
+        kwargs = self._session_kwargs(session)
+        activation = self.db.runtime_state.find_one(
+            {"_id": self._activation_key(entry_id)}, **kwargs
+        )
+        if activation is not None:
+            return activation
+        # Pre-multi-entry deployments used one singleton activation record.
+        legacy = self.db.runtime_state.find_one({"_id": "activated_entry"}, **kwargs)
+        if legacy is not None and legacy.get("entry_id") == entry_id:
+            return legacy
+        return None
+
     def ensure_indexes(self) -> None:
         self.jobs.ensure_indexes()
+        legacy_activation = self.db.runtime_state.find_one({"_id": "activated_entry"})
+        if legacy_activation is not None and isinstance(
+            legacy_activation.get("entry_id"), str
+        ):
+            self.db.runtime_state.replace_one(
+                {"_id": self._activation_key(legacy_activation["entry_id"])},
+                {
+                    "_id": self._activation_key(legacy_activation["entry_id"]),
+                    "entry_id": legacy_activation["entry_id"],
+                    "scraper_release": legacy_activation.get("scraper_release"),
+                },
+                upsert=True,
+            )
+            self.db.runtime_state.delete_one({"_id": "activated_entry"})
         self.db.execution_runs.create_index([("entry_id", ASCENDING), ("started_at", DESCENDING)])
         self.db.records.create_index("run_id", unique=True)
         self.db.artifacts.create_index("run_id", unique=True)
@@ -262,9 +293,6 @@ class MongoControlService:
         entry_contract = _doctor_entry_contract(result)
         commit_sha = commit_sha.lower()
         entry_id = task["entry_id"]
-        activation = self.db.runtime_state.find_one({"_id": "activated_entry"})
-        if activation is not None and activation.get("entry_id") != entry_id:
-            raise RuntimeError("prototype supports only one activated entry")
 
         # Provisioning may fetch and fast-forward Git, so it must never run in a
         # MongoDB transaction. The provisioner is idempotent at an exact SHA.
@@ -287,9 +315,6 @@ class MongoControlService:
                 return None
             if _doctor_entry_contract(persisted_result) != entry_contract:
                 raise RuntimeError("Doctor result metadata changed during handoff")
-            activation = self.db.runtime_state.find_one({"_id": "activated_entry"}, **kwargs)
-            if activation is not None and activation.get("entry_id") != entry_id:
-                raise RuntimeError("prototype supports only one activated entry")
             entry_updates = {
                 "scraper_release": commit_sha,
                 "updated_at": datetime.now(UTC),
@@ -302,8 +327,12 @@ class MongoControlService:
             ).matched_count != 1:
                 return None
             self.db.runtime_state.replace_one(
-                {"_id": "activated_entry"},
-                {"_id": "activated_entry", "entry_id": entry_id, "scraper_release": commit_sha},
+                {"_id": self._activation_key(entry_id)},
+                {
+                    "_id": self._activation_key(entry_id),
+                    "entry_id": entry_id,
+                    "scraper_release": commit_sha,
+                },
                 upsert=True,
                 **kwargs,
             )
@@ -342,24 +371,32 @@ class MongoControlService:
         return handed_off_job
 
     def consume_next_doctor_handoff(self) -> ExecutionJob | None:
-        task = self.db.doctor_tasks.find_one(
+        # A malformed result must not wedge every later handoff: record the
+        # error on the offending task and move on to the next pending one.
+        pending = self.db.doctor_tasks.find(
             {"status": "succeeded", "handed_off_at": {"$exists": False}},
             sort=[("completed_at", ASCENDING), ("created_at", ASCENDING)],
+            limit=25,
         )
-        if task is None:
-            return None
-        return self.consume_doctor_handoff(str(task["_id"]))
+        for task in pending:
+            try:
+                job = self.consume_doctor_handoff(str(task["_id"]))
+            except RuntimeError as exc:
+                self.db.doctor_tasks.update_one(
+                    {"_id": task["_id"]},
+                    {"$set": {"handoff_error": str(exc)[:1000]}},
+                )
+                continue
+            if job is not None:
+                return job
+        return None
 
     def enqueue(self, job: ExecutionJob) -> ExecutionJob:
         entry = self.get_entry(job.entry_id)
         if entry is None or not entry.scraper_release:
             raise RuntimeError(f"entry {job.entry_id!r} has no activated scraper release")
-        activation = self.db.runtime_state.find_one({"_id": "activated_entry"})
-        if activation is None:
-            raise RuntimeError(f"entry {job.entry_id!r} has no activated scraper release")
-        if activation.get("entry_id") != job.entry_id:
-            raise RuntimeError("prototype supports only one activated entry")
-        if activation.get("scraper_release") != entry.scraper_release:
+        activation = self._get_activation(job.entry_id)
+        if activation is None or activation.get("scraper_release") != entry.scraper_release:
             raise RuntimeError(f"entry {job.entry_id!r} has no activated scraper release")
         job.scraper_release = entry.scraper_release
         return self.jobs.enqueue(job)
@@ -368,11 +405,8 @@ class MongoControlService:
         entry = self.get_entry(entry_id)
         if entry is None or not entry.scraper_release or release != entry.scraper_release:
             return False
-        activation = self.db.runtime_state.find_one({"_id": "activated_entry"})
-        return activation is not None and (
-            activation.get("entry_id") == entry_id
-            and activation.get("scraper_release") == release
-        )
+        activation = self._get_activation(entry_id)
+        return activation is not None and activation.get("scraper_release") == release
 
     def claim(self, worker_id: str) -> ExecutionJob | None:
         return self.jobs.claim(worker_id)

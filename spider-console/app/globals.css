@@ -247,6 +247,16 @@ button.action:disabled {
   cursor: not-allowed;
 }
 
+button.action.secondary {
+  background: transparent;
+  border: 1px solid var(--brand);
+  color: var(--brand-light);
+}
+
+button.action.secondary:hover {
+  border-color: var(--brand-light);
+}
+
 .note {
   color: var(--brand-light);
   font-size: 12px;
