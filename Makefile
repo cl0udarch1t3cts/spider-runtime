@@ -13,7 +13,7 @@ WAIT         := --wait --wait-timeout 180
 .PHONY: help status health up start-doctor stop stop-doctor stop-doctor-stack \
 	stop-executor-apps down restart-doctor restart-worker restart-api \
 	restart-runner restart-mongo restart-all update update-doctor \
-	logs logs-executor logs-doctor tail-doctor tail-worker tail-runner tail-proxy
+	logs logs-executor logs-doctor tail-all tail-doctor tail-worker tail-runner tail-proxy
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-20s\033[0m %s\n", $$1, $$2}'
@@ -121,6 +121,11 @@ logs-executor: ## Last 10 minutes of Executor logs
 
 logs-doctor: ## Last 10 minutes of Doctor stack logs
 	cd $(DOCTOR_DIR) && docker compose logs --no-color --since=10m doctor broker egress-proxy
+
+tail-all: ## Follow all services of both stacks (Ctrl+C stops following, not the services)
+	@(cd $(EXECUTOR_DIR) && docker compose logs --no-color -f) & \
+	(cd $(DOCTOR_DIR) && docker compose logs --no-color -f) & \
+	wait
 
 tail-doctor: ## Follow the Doctor dispatcher (Ctrl+C stops following, not the service)
 	cd $(DOCTOR_DIR) && docker compose logs --no-color -f doctor
