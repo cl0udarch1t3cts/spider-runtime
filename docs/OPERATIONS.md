@@ -650,6 +650,16 @@ After a subscription upgrade, raise the budget in the Doctor `.env`
 (`SPIDER_DOCTOR_BUDGET_DAILY_PERCENT`, `SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT`)
 and restart the Doctor service.
 
+## Doctor parallelism
+
+The Doctor processes up to `SPIDER_DOCTOR_MAX_PARALLEL_TASKS` (default 2) tasks
+concurrently: claims are atomic leases, every task gets its own workspace and
+Hermes container, publication is serialized in-process, and concurrent
+publications from elsewhere are rebased onto the branch tip. Each task
+container is capped at 2 CPUs/4g — size the setting against the VM (4 CPUs/8g
+supports at most 2). The broker concurrency limit follows the same variable.
+Every fresh launch still passes the subscription budget gate individually.
+
 ## Task egress network
 
 ```bash

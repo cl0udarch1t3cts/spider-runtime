@@ -40,7 +40,8 @@ services:
       SPIDER_BROKER_CLIENT_TOKEN_FILE: /run/secrets/proxy-token
       SPIDER_BROKER_ALLOWED_MODEL: ${SPIDER_DOCTOR_MODEL:-gpt-5.4}
       SPIDER_BROKER_REQUESTS_PER_MINUTE: "20"
-      SPIDER_BROKER_MAX_CONCURRENT: "2"
+      # Must be at least SPIDER_DOCTOR_MAX_PARALLEL_TASKS.
+      SPIDER_BROKER_MAX_CONCURRENT: ${SPIDER_DOCTOR_MAX_PARALLEL_TASKS:-2}
     volumes:
       - ${SPIDER_DOCTOR_HOST_ROOT:?set the absolute Doctor checkout path}/data/broker-hermes:/opt/data:rw
       - ${SPIDER_DOCTOR_HOST_ROOT}/data/proxy-token:/run/secrets/proxy-token:ro
@@ -91,6 +92,8 @@ services:
       # jobs, keeping 30% reserved for interactive development. Raise these
       # via .env after a subscription upgrade.
       SPIDER_DOCTOR_BROKER_USAGE_URL: http://broker:8645/usage
+      # Concurrent Hermes task launches (each container is capped at 2 CPUs/4g).
+      SPIDER_DOCTOR_MAX_PARALLEL_TASKS: ${SPIDER_DOCTOR_MAX_PARALLEL_TASKS:-2}
       SPIDER_DOCTOR_BUDGET_DAILY_PERCENT: ${SPIDER_DOCTOR_BUDGET_DAILY_PERCENT:-10}
       SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT: ${SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT:-30}
     volumes:

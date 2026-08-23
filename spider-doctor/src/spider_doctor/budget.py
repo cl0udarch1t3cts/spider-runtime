@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass
 
@@ -62,13 +63,15 @@ class SubscriptionBudgetGate:
             transport=transport,
         )
         self._cached: tuple[float, BudgetDecision] | None = None
+        self._lock = threading.Lock()
 
     def check(self) -> BudgetDecision:
-        now = time.monotonic()
-        if self._cached is not None and now - self._cached[0] < self.cache_seconds:
-            return self._cached[1]
-        decision = self._evaluate()
-        self._cached = (now, decision)
+        with self._lock:
+            now = time.monotonic()
+            if self._cached is not None and now - self._cached[0] < self.cache_seconds:
+                return self._cached[1]
+            decision = self._evaluate()
+            self._cached = (now, decision)
         if decision.allowed:
             logger.info("Doctor budget decision: proceed (%s)", decision.detail)
         else:

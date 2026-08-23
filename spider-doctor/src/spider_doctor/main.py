@@ -4,6 +4,7 @@ import argparse
 import logging
 import signal
 import time
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from datetime import timedelta
 
 from pymongo import MongoClient
@@ -81,6 +82,34 @@ def create_worker(settings: Settings) -> DoctorWorker:
     )
 
 
+def _run_forever(worker: DoctorWorker, settings: Settings) -> None:
+    # Up to max_parallel_tasks claims run concurrently; claim leases, per-task
+    # workspaces, and candidate rebasing already make concurrent tasks safe.
+    pool = ThreadPoolExecutor(
+        max_workers=settings.max_parallel_tasks, thread_name_prefix="doctor-task"
+    )
+    futures: set[Future] = set()
+    try:
+        while True:
+            while len(futures) < settings.max_parallel_tasks:
+                futures.add(pool.submit(worker.process_one))
+            done, futures = wait(futures, return_when=FIRST_COMPLETED)
+            processed = False
+            for future in done:
+                result = future.result()
+                if result is not None:
+                    processed = True
+                    logger.info(
+                        "Doctor attempt status=%s summary=%s", result.status, result.summary
+                    )
+            if not processed:
+                time.sleep(settings.poll_seconds)
+    finally:
+        # On crash or SIGTERM stop claiming immediately; in-flight tasks keep
+        # their leases and are reconciled by the next dispatcher start.
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the isolated Hermes Script Doctor dispatcher")
     parser.add_argument("--once", action="store_true", help="process at most one task")
@@ -90,14 +119,12 @@ def main() -> None:
     settings = Settings()
     worker = create_worker(settings)
     worker.launcher.reconcile_orphans()
-    while True:
+    if args.once:
         result = worker.process_one()
         if result is not None:
             logger.info("Doctor attempt status=%s summary=%s", result.status, result.summary)
-        if args.once:
-            return
-        if result is None:
-            time.sleep(settings.poll_seconds)
+        return
+    _run_forever(worker, settings)
 
 
 if __name__ == "__main__":

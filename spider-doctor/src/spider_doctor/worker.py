@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from datetime import timedelta
 from pathlib import Path
 from typing import Protocol
@@ -82,6 +83,9 @@ class DoctorWorker:
         self.lease_for = lease_for
         self.budget_gate = budget_gate
         self.budget_retry_after = budget_retry_after
+        # Serializes publication within this process: concurrent pushes to the
+        # same branch would force one task through the rebase-and-requeue path.
+        self._publish_lock = threading.Lock()
 
     def process_one(self) -> DoctorResult | None:
         task = self.repository.claim(self.worker_id, lease_for=self.lease_for)
@@ -112,16 +116,19 @@ class DoctorWorker:
             if task.candidate_sha:
                 workspace = self.workspace_manager.resume(task.id, task.candidate_sha)
                 payload = task.candidate_result or {}
-                published_sha = self.publisher.publish(workspace, task.candidate_sha)
-                if published_sha != task.candidate_sha and not self.repository.record_candidate(
-                    task.id,
-                    task.lease.token,
-                    published_sha,
-                    payload,
-                ):
-                    raise RuntimeError("Doctor task lease was lost before candidate persistence")
-                if not self.repository.complete_publication(task.id, task.lease.token, published_sha):
-                    raise RuntimeError("Doctor task lease was lost before publication completion")
+                with self._publish_lock:
+                    published_sha = self.publisher.publish(workspace, task.candidate_sha)
+                    if published_sha != task.candidate_sha and not self.repository.record_candidate(
+                        task.id,
+                        task.lease.token,
+                        published_sha,
+                        payload,
+                    ):
+                        raise RuntimeError("Doctor task lease was lost before candidate persistence")
+                    if not self.repository.complete_publication(
+                        task.id, task.lease.token, published_sha
+                    ):
+                        raise RuntimeError("Doctor task lease was lost before publication completion")
                 return DoctorResult.model_validate(payload)
 
             evidence = self.evidence_loader.load(task)
@@ -154,28 +161,31 @@ class DoctorWorker:
                 raise ValueError("Hermes reported a repair but produced no allowed changes")
             result.changed_files = actual_changes
             result_payload = result.model_dump(mode="json")
-            candidate_sha = self.publisher.create_candidate(
-                workspace,
-                actual_changes,
-                f"Doctor {task.type} {task.entry_id}",
-            )
-            if not self.repository.record_candidate(
-                task.id,
-                task.lease.token,
-                candidate_sha,
-                result_payload,
-            ):
-                raise RuntimeError("Doctor task lease was lost before candidate persistence")
-            published_sha = self.publisher.publish(workspace, candidate_sha)
-            if published_sha != candidate_sha and not self.repository.record_candidate(
-                task.id,
-                task.lease.token,
-                published_sha,
-                result_payload,
-            ):
-                raise RuntimeError("Doctor task lease was lost before candidate persistence")
-            if not self.repository.complete_publication(task.id, task.lease.token, published_sha):
-                raise RuntimeError("Doctor task lease was lost before publication completion")
+            with self._publish_lock:
+                candidate_sha = self.publisher.create_candidate(
+                    workspace,
+                    actual_changes,
+                    f"Doctor {task.type} {task.entry_id}",
+                )
+                if not self.repository.record_candidate(
+                    task.id,
+                    task.lease.token,
+                    candidate_sha,
+                    result_payload,
+                ):
+                    raise RuntimeError("Doctor task lease was lost before candidate persistence")
+                published_sha = self.publisher.publish(workspace, candidate_sha)
+                if published_sha != candidate_sha and not self.repository.record_candidate(
+                    task.id,
+                    task.lease.token,
+                    published_sha,
+                    result_payload,
+                ):
+                    raise RuntimeError("Doctor task lease was lost before candidate persistence")
+                if not self.repository.complete_publication(
+                    task.id, task.lease.token, published_sha
+                ):
+                    raise RuntimeError("Doctor task lease was lost before publication completion")
             return result
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"[:4000]

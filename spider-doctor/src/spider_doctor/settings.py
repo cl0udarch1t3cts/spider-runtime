@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     git_author_email: str = "spider-doctor@localhost"
     agent_timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     agent_max_turns: int = Field(default=40, ge=1, le=100)
+    # Concurrent Hermes task launches. Size against host capacity: each task
+    # container is capped at 2 CPUs / 4g, and the broker concurrency limit
+    # must be at least this value.
+    max_parallel_tasks: int = Field(default=2, ge=1, le=8)
     # Subscription budget gate: consulted before every Hermes launch. The
     # weekly contingent is paced at budget_daily_percent per day, capped so
     # budget_reserve_percent always stays free for interactive development.
