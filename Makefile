@@ -12,7 +12,7 @@ WAIT         := --wait --wait-timeout 180
 
 .PHONY: help status health up start-doctor stop stop-doctor stop-doctor-stack \
 	stop-executor-apps down restart-doctor restart-worker restart-api \
-	restart-runner restart-mongo restart-all update update-doctor \
+	restart-runner restart-mongo restart-all pull update update-doctor \
 	logs logs-executor logs-doctor tail-all tail-doctor tail-worker tail-runner tail-proxy
 
 help: ## List available targets
@@ -96,6 +96,9 @@ restart-all: ## Restart the complete platform
 	cd $(DOCTOR_DIR) && ./scripts/start.sh
 
 # --- update ------------------------------------------------------------------
+
+pull: ## Pull the monorepo only; no rebuild, no restarts
+	git -C $(CURDIR) pull --ff-only
 
 update: ## Pull the monorepo and redeploy: stop Doctor, rebuild Executor, restart Doctor
 	@docker ps --filter 'label=spider-doctor.managed=true' --format 'table {{.Names}}\t{{.Status}}'
