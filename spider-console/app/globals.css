@@ -274,3 +274,11 @@ button.action.secondary:hover {
   background: var(--panel);
   z-index: 1;
 }
+
+tr.clickable {
+  cursor: pointer;
+}
+
+tr.clickable:hover td {
+  background: rgba(91, 77, 229, 0.12);
+}

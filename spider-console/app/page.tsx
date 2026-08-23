@@ -439,7 +439,12 @@ export default function Dashboard() {
             </thead>
             <tbody>
               {entries.map((entry) => (
-                <tr key={entry.id}>
+                <tr
+                  key={entry.id}
+                  className="clickable"
+                  title="Show this entry's latest scraped record"
+                  onClick={() => showData(entry.id)}
+                >
                   <td>{entry.id}</td>
                   <td>{entry.businessname ?? "—"}</td>
                   <td>{entry.website ?? "—"}</td>
@@ -453,18 +458,14 @@ export default function Dashboard() {
                       title={
                         entry.scraper_release
                           ? "Run the spider script now and fetch the latest data"
-                          : "no activated scraper release"
+                          : "no activated scraper release yet (Doctor has not published a scraper)"
                       }
-                      onClick={() => triggerFetch(entry.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        triggerFetch(entry.id);
+                      }}
                     >
                       fetch
-                    </button>{" "}
-                    <button
-                      className="action secondary"
-                      title="Show this entry's latest scraped record"
-                      onClick={() => showData(entry.id)}
-                    >
-                      data
                     </button>
                   </td>
                 </tr>
