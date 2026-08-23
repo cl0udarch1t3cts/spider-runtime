@@ -1,0 +1,33 @@
+services:
+  console:
+    build: .
+    restart: unless-stopped
+    init: true
+    # Read-only dashboard, no auth: bind to localhost only and reach it
+    # through an SSH tunnel (ssh -L 8646:127.0.0.1:8646 spider-01).
+    ports:
+      - "127.0.0.1:8646:3000"
+    environment:
+      EXECUTOR_API_URL: http://api:8000
+      USAGE_URL: http://broker:8645/usage
+      USAGE_TOKEN_FILE: /run/secrets/proxy-token
+      BUDGET_DAILY_PERCENT: ${SPIDER_DOCTOR_BUDGET_DAILY_PERCENT:-10}
+      BUDGET_RESERVE_PERCENT: ${SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT:-30}
+    volumes:
+      - ${SPIDER_DOCTOR_HOST_ROOT:?set the absolute Doctor checkout path}/data/proxy-token:/run/secrets/proxy-token:ro
+    networks:
+      - executor-control
+      - doctor-uplink
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 128
+    mem_limit: 512m
+
+networks:
+  executor-control:
+    external: true
+    name: ${SPIDER_EXECUTOR_CONTROL_NETWORK:-spider-executor_control}
+  doctor-uplink:
+    external: true
+    name: ${SPIDER_DOCTOR_UPLINK_NETWORK:-spider-doctor_uplink}

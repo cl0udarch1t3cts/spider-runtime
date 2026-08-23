@@ -487,6 +487,80 @@ class MongoControlService:
     def doctor_task_count(self) -> int:
         return self.db.doctor_tasks.count_documents({})
 
+    # --- read-only console listings -----------------------------------------
+
+    def list_entries(self) -> list[dict]:
+        # View dicts, not Entry models: pre-contract entry documents lack
+        # entry_id/businessname and must still be listable.
+        return [
+            {
+                "id": str(document["_id"]),
+                "businessname": document.get("businessname") or document.get("name"),
+                "website": document.get("website"),
+                "active": bool(document.get("active", True)),
+                "scraper_release": document.get("scraper_release"),
+                "created_at": document.get("created_at"),
+                "updated_at": document.get("updated_at"),
+            }
+            for document in self.db.entries.find().sort("updated_at", DESCENDING)
+        ]
+
+    def list_recent_runs(self, limit: int = 50) -> list[ExecutionRun]:
+        return [
+            _decode(ExecutionRun, document, id_field=True)
+            for document in self.db.execution_runs.find()
+            .sort("started_at", DESCENDING)
+            .limit(limit)
+        ]
+
+    def list_doctor_tasks(self, limit: int = 50) -> list[dict]:
+        tasks = []
+        for document in (
+            self.db.doctor_tasks.find().sort("updated_at", DESCENDING).limit(limit)
+        ):
+            lease = document.get("lease")
+            tasks.append(
+                {
+                    "id": str(document["_id"]),
+                    "entry_id": document.get("entry_id"),
+                    "type": document.get("type"),
+                    "status": document.get("status"),
+                    "attempts": int(document.get("attempts", 0)),
+                    "max_attempts": int(document.get("max_attempts", 0)),
+                    "failure_class": document.get("failure_class"),
+                    "last_error": document.get("last_error"),
+                    "candidate_sha": document.get("candidate_sha"),
+                    "available_at": document.get("available_at"),
+                    "created_at": document.get("created_at"),
+                    "updated_at": document.get("updated_at"),
+                    # The fencing token stays private to the Doctor.
+                    "lease": {
+                        "worker_id": lease.get("worker_id"),
+                        "expires_at": lease.get("expires_at"),
+                    }
+                    if isinstance(lease, dict)
+                    else None,
+                }
+            )
+        return tasks
+
+    def stats(self) -> dict:
+        def by_status(collection) -> dict[str, int]:
+            return {
+                str(group["_id"]): int(group["count"])
+                for group in collection.aggregate(
+                    [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
+                )
+            }
+
+        return {
+            "entries": self.db.entries.count_documents({}),
+            "records": self.db.records.count_documents({}),
+            "doctor_tasks": by_status(self.db.doctor_tasks),
+            "execution_jobs": by_status(self.db.execution_jobs),
+            "execution_runs": by_status(self.db.execution_runs),
+        }
+
     @contextmanager
     def _transaction(self):
         client = self.db.client

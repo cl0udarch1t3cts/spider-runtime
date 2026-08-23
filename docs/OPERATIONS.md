@@ -650,6 +650,19 @@ After a subscription upgrade, raise the budget in the Doctor `.env`
 (`SPIDER_DOCTOR_BUDGET_DAILY_PERCENT`, `SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT`)
 and restart the Doctor service.
 
+## Spider console
+
+`make console` builds and starts the read-only dashboard (`spider-console/`,
+Next.js) showing live Doctor tasks, execution runs, entries, and the
+subscription budget. It consumes only HTTP APIs: the Executor's read-only
+listing endpoints (`/api/v1/stats`, `/api/v1/doctor-tasks`, `/api/v1/runs`,
+`/api/v1/entries`) and the broker `/usage` endpoint. It has no auth and binds
+to `127.0.0.1:8646` on the VM only; access it through a tunnel:
+
+```bash
+ssh -N -L 8646:127.0.0.1:8646 spider-01   # then open http://localhost:8646
+```
+
 ## Doctor parallelism
 
 The Doctor processes up to `SPIDER_DOCTOR_MAX_PARALLEL_TASKS` (default 2) tasks

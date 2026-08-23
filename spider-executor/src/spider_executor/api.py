@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import FastAPI, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from spider_executor.models import (
@@ -26,6 +27,11 @@ class Control(Protocol):
     def get_record(self, record_id: str) -> ScrapedRecord | None: ...
     def register(self, entry_id: str, businessname: str, address: str) -> dict: ...
 
+    def list_entries(self) -> list[dict]: ...
+    def list_recent_runs(self, limit: int) -> list[ExecutionRun]: ...
+    def list_doctor_tasks(self, limit: int) -> list[dict]: ...
+    def stats(self) -> dict: ...
+
 
 class JobRequest(BaseModel):
     entry_id: str
@@ -47,6 +53,46 @@ class RegisterResponse(BaseModel):
     task_id: str
     status: str
     operation: str
+
+
+class EntryView(BaseModel):
+    id: str
+    businessname: str | None = None
+    website: str | None = None
+    active: bool = True
+    scraper_release: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class DoctorLeaseView(BaseModel):
+    # Deliberately omits the fencing token; extra fields are dropped.
+    worker_id: str | None = None
+    expires_at: datetime | None = None
+
+
+class DoctorTaskView(BaseModel):
+    id: str
+    entry_id: str | None = None
+    type: str | None = None
+    status: str | None = None
+    attempts: int = 0
+    max_attempts: int = 0
+    failure_class: str | None = None
+    last_error: str | None = None
+    candidate_sha: str | None = None
+    available_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    lease: DoctorLeaseView | None = None
+
+
+class OverviewStats(BaseModel):
+    entries: int
+    records: int
+    doctor_tasks: dict[str, int]
+    execution_jobs: dict[str, int]
+    execution_runs: dict[str, int]
 
 
 def create_app(control: Control) -> FastAPI:
@@ -107,5 +153,23 @@ def create_app(control: Control) -> FastAPI:
         if record is None:
             raise HTTPException(status_code=404, detail="record not found")
         return record
+
+    # --- read-only console listings -----------------------------------------
+
+    @app.get("/api/v1/entries", response_model=list[EntryView])
+    def list_entries() -> list[dict]:
+        return control.list_entries()
+
+    @app.get("/api/v1/runs", response_model=list[ExecutionRun])
+    def list_recent_runs(limit: int = Query(default=50, ge=1, le=200)) -> list[ExecutionRun]:
+        return control.list_recent_runs(limit)
+
+    @app.get("/api/v1/doctor-tasks", response_model=list[DoctorTaskView])
+    def list_doctor_tasks(limit: int = Query(default=50, ge=1, le=200)) -> list[dict]:
+        return control.list_doctor_tasks(limit)
+
+    @app.get("/api/v1/stats", response_model=OverviewStats)
+    def overview_stats() -> dict:
+        return control.stats()
 
     return app

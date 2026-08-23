@@ -5,12 +5,14 @@
 
 EXECUTOR_DIR := $(CURDIR)/spider-executor
 DOCTOR_DIR   := $(CURDIR)/spider-doctor
+CONSOLE_DIR  := $(CURDIR)/spider-console
 HEALTH_URL   := http://127.0.0.1:8000/health/ready
 WAIT         := --wait --wait-timeout 180
 
 .DEFAULT_GOAL := help
 
-.PHONY: help status health usage up start-doctor stop stop-doctor stop-doctor-stack \
+.PHONY: help status health usage console console-down console-logs \
+	up start-doctor stop stop-doctor stop-doctor-stack \
 	stop-executor-apps down restart-doctor restart-worker restart-api \
 	restart-runner restart-mongo restart-all pull update update-doctor \
 	logs logs-executor logs-doctor tail tail-doctor tail-worker tail-runner tail-proxy
@@ -27,6 +29,16 @@ status: ## Show container status of both stacks
 
 health: ## Check the Executor readiness endpoint
 	curl --fail-with-body $(HEALTH_URL)
+
+console: ## Build and start the read-only console on 127.0.0.1:8646 (access via SSH tunnel)
+	cd $(CONSOLE_DIR) && SPIDER_DOCTOR_HOST_ROOT=$(DOCTOR_DIR) docker compose up --build -d
+	@echo "console up; open a tunnel: ssh -N -L 8646:127.0.0.1:8646 <vm> then http://localhost:8646"
+
+console-down: ## Stop the console
+	cd $(CONSOLE_DIR) && SPIDER_DOCTOR_HOST_ROOT=$(DOCTOR_DIR) docker compose down
+
+console-logs: ## Recent console logs
+	cd $(CONSOLE_DIR) && SPIDER_DOCTOR_HOST_ROOT=$(DOCTOR_DIR) docker compose logs --no-color --since=10m
 
 usage: ## Show current subscription usage via the broker (budget gate source)
 	@cd $(DOCTOR_DIR) && docker compose exec doctor python3 -c 'import os, json, urllib.request; \
