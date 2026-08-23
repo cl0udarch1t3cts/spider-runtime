@@ -19,10 +19,10 @@ Initial machine installation and credential setup remain in [`VM_SETUP.md`](VM_S
 Host: spider-01
 User: spider
 Project root: /home/spider/projects
-Executor: /home/spider/projects/spider-executor
-Doctor: /home/spider/projects/spider-doctor
+Executor: /home/spider/projects/spider-runtime/spider-executor
+Doctor: /home/spider/projects/spider-runtime/spider-doctor
 Scrapers: /home/spider/projects/spider-scripts
-Operations: /home/spider/projects/spider-devops
+Operations: /home/spider/projects/spider-runtime/spider-devops
 ```
 
 Run Docker commands as `spider`, without `sudo`.
@@ -61,7 +61,7 @@ docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 Executor status:
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose ps -a
 curl --fail-with-body http://127.0.0.1:8000/health/ready
 ```
@@ -79,7 +79,7 @@ Expected Executor state:
 Doctor status:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose ps -a
 ```
 
@@ -104,7 +104,7 @@ ss -ltn | grep -E '127\.0\.0\.1:(8000|27017)'
 Start Executor first:
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose up -d --wait --wait-timeout 180
 curl --fail-with-body http://127.0.0.1:8000/health/ready
 ```
@@ -112,7 +112,7 @@ curl --fail-with-body http://127.0.0.1:8000/health/ready
 Then start Doctor through its reviewed launcher and preflight:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 ./scripts/start.sh
 ```
 
@@ -127,11 +127,11 @@ docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 The long-running services use `restart: unless-stopped`, but verify them explicitly after every reboot:
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose up -d --wait --wait-timeout 180
 curl --fail-with-body http://127.0.0.1:8000/health/ready
 
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 ./scripts/start.sh
 ```
 
@@ -142,7 +142,7 @@ Do not assume Doctor is processing tasks merely because its broker and proxy are
 Use this only when Executor is already healthy and Doctor’s broker/proxy are already present:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose start doctor
 docker compose ps doctor
 ```
@@ -162,7 +162,7 @@ If the Doctor container does not exist, dependencies changed, or preflight has n
 This preserves queued tasks and leaves broker/proxy available:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose stop doctor
 docker compose ps doctor
 ```
@@ -172,7 +172,7 @@ Use this before diagnosing repeated Doctor failures or before maintenance.
 ## Stop the complete Doctor stack
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose stop
 ```
 
@@ -183,7 +183,7 @@ This stops Doctor, broker, and egress proxy without removing containers or data.
 Stop Doctor first, then:
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose stop worker api runner
 ```
 
@@ -194,10 +194,10 @@ MongoDB remains available for inspection and SSH forwarding.
 Stop in reverse dependency order:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose stop
 
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose stop
 ```
 
@@ -208,10 +208,10 @@ docker compose stop
 Only for a deliberate clean container recreation:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose down
 
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose down
 ```
 
@@ -224,7 +224,7 @@ Do **not** add `--volumes`. MongoDB and Executor artifacts are in named volumes.
 ## Restart Doctor only
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose restart doctor
 docker compose ps doctor
 ```
@@ -238,7 +238,7 @@ docker compose logs --no-color --since=5m doctor
 ## Restart Executor worker only
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose restart worker
 docker compose ps worker
 ```
@@ -246,7 +246,7 @@ docker compose ps worker
 ## Restart API only
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose restart api
 curl --fail-with-body http://127.0.0.1:8000/health/ready
 ```
@@ -256,7 +256,7 @@ curl --fail-with-body http://127.0.0.1:8000/health/ready
 Pause the worker first so it cannot submit a run during the restart:
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose stop worker
 docker compose restart runner
 docker compose up -d --wait --wait-timeout 180 runner
@@ -269,10 +269,10 @@ docker compose ps runner worker
 Stop Doctor and Executor processing first:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose stop doctor
 
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose stop worker api
 docker compose restart mongo
 docker compose up -d --wait --wait-timeout 180 mongo mongo-init
@@ -283,22 +283,22 @@ curl --fail-with-body http://127.0.0.1:8000/health/ready
 Then restart Doctor:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 ./scripts/start.sh
 ```
 
 ## Restart the complete platform
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose stop
 
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose stop
 docker compose up -d --wait --wait-timeout 180
 curl --fail-with-body http://127.0.0.1:8000/health/ready
 
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 ./scripts/start.sh
 ```
 
@@ -313,7 +313,7 @@ Confirm host, user, and repository state:
 ```bash
 whoami
 hostname
-for repo in spider-scripts spider-executor spider-doctor spider-devops; do
+for repo in spider-scripts spider-runtime; do
   git -C "/home/spider/projects/$repo" status --short --branch
 done
 ```
@@ -335,14 +335,14 @@ Let a healthy task finish before routine maintenance.
 Stop Doctor first:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose stop doctor
 ```
 
 Update and rebuild Executor:
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 git pull --ff-only
 docker compose config --quiet
 docker compose up --build -d --wait --wait-timeout 180
@@ -353,7 +353,7 @@ docker compose ps -a
 Restart Doctor after Executor is healthy:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 ./scripts/start.sh
 ```
 
@@ -362,7 +362,7 @@ cd /home/spider/projects/spider-doctor
 Stop Doctor before updating its code:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose stop doctor
 git pull --ff-only
 docker compose config --quiet
@@ -374,7 +374,7 @@ Do not rerun `scripts/configure-hermes.sh` during a normal code update.
 ## Update operations documentation
 
 ```bash
-cd /home/spider/projects/spider-devops
+cd /home/spider/projects/spider-runtime/spider-devops
 git pull --ff-only
 ```
 
@@ -399,7 +399,7 @@ Never reset or clean unfamiliar changes.
 All recent Executor logs:
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose logs --no-color --since=10m mongo mongo-init api worker runner
 ```
 
@@ -418,7 +418,7 @@ docker compose logs --no-color -f runner
 ## Doctor logs
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose logs --no-color --since=10m doctor broker egress-proxy
 ```
 
@@ -493,7 +493,7 @@ Registration returns `202 Accepted` after persisting the entry and create task. 
 Posting the same `entry_id` with a changed name or address updates the existing registration and resets its queued create task. Stop Doctor first so the task cannot be running:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose stop doctor
 ```
 
@@ -605,7 +605,7 @@ isWritablePrimary: true
 ## Doctor fail-closed preflight
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 python3 scripts/preflight.py
 ```
 
@@ -643,7 +643,7 @@ policy=restricted-v1
 Stop Doctor immediately:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose stop doctor
 ```
 
@@ -665,7 +665,7 @@ Matching candidate and commit SHAs should reconcile to `succeeded` with `lease=n
 Confirm `runtime-init` exited zero:
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose ps -a runtime-init
 docker compose logs --no-color runtime-init
 ```
@@ -694,7 +694,7 @@ Do not mount SSH credentials into API, runner, MongoDB, or disposable Doctor tas
 ## Executor API is unavailable
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose ps -a api mongo mongo-init
 docker compose logs --no-color --tail=200 api mongo mongo-init
 curl -v http://127.0.0.1:8000/health/ready
@@ -703,7 +703,7 @@ curl -v http://127.0.0.1:8000/health/ready
 ## Doctor broker is unhealthy
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose ps -a broker
 docker compose logs --no-color --tail=200 broker
 ```
@@ -715,7 +715,7 @@ Do not copy OAuth out of `data/broker-hermes` and do not place OAuth into `data/
 The production override pins both `mongo` and `mongo-init` to `7.0.40`. Verify the effective configuration:
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose config --images
 ```
 

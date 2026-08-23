@@ -45,7 +45,7 @@ services:
       SPIDER_MONGODB_URI: mongodb://mongo:27017/spider?replicaSet=rs0&directConnection=true
       SPIDER_SCRIPTS_ROOT: /srv/spider/repositories/spider-scripts
     volumes:
-      - ${SPIDER_SCRIPTS_HOST_PATH:-../spider-scripts}:/srv/spider/repositories/spider-scripts:ro
+      - ${SPIDER_SCRIPTS_HOST_PATH:-../../spider-scripts}:/srv/spider/repositories/spider-scripts:ro
     ports:
       - "127.0.0.1:8000:8000"
     networks: [control, edge]
@@ -99,7 +99,7 @@ services:
       SPIDER_RUNNER_URL: http://runner:8001
     volumes:
       - artifacts:/srv/spider/artifacts
-      - ${SPIDER_SCRIPTS_HOST_PATH:-../spider-scripts}:/srv/spider/repositories/spider-scripts:rw
+      - ${SPIDER_SCRIPTS_HOST_PATH:-../../spider-scripts}:/srv/spider/repositories/spider-scripts:rw
       - ${SPIDER_EXECUTOR_SSH_HOST_PATH:-/home/spider/.ssh}:/app/.ssh:ro
       - runtime-lock:/srv/spider/locks
     networks: [control, runner]
@@ -119,7 +119,7 @@ services:
       SPIDER_SCRIPTS_ROOT: /srv/spider/repositories/spider-scripts
       SPIDER_RUNNER_TIMEOUT_SECONDS: 90
     volumes:
-      - ${SPIDER_SCRIPTS_HOST_PATH:-../spider-scripts}:/srv/spider/repositories/spider-scripts:ro
+      - ${SPIDER_SCRIPTS_HOST_PATH:-../../spider-scripts}:/srv/spider/repositories/spider-scripts:ro
       - runtime-lock:/srv/spider/locks
     networks: [runner]
     read_only: true

@@ -113,21 +113,23 @@ Do not continue until this works. Doctor uses this read-only SSH identity to pub
 
 ---
 
-## 4. Clone the four repositories
+## 4. Clone the two repositories
+
+`spider-runtime` is the monorepo containing `spider-doctor/`, `spider-executor/`,
+and `spider-devops/`. `spider-scripts` stays a standalone repository because the
+Doctor clones and commits into it.
 
 ```bash
 cd /home/spider/projects
 
 git clone git@github.com:cl0udarch1t3cts/spider-scripts.git
-git clone git@github.com:cl0udarch1t3cts/spider-executor.git
-git clone git@github.com:cl0udarch1t3cts/spider-doctor.git
-git clone git@github.com:cl0udarch1t3cts/spider-devops.git
+git clone git@github.com:cl0udarch1t3cts/spider-runtime.git
 ```
 
 Verify all checkouts:
 
 ```bash
-for repo in spider-scripts spider-executor spider-doctor spider-devops; do
+for repo in spider-scripts spider-runtime; do
   git -C "/home/spider/projects/$repo" status --short --branch
 done
 ```
@@ -156,7 +158,7 @@ The Executor Compose stack includes:
 The repository override pins MongoDB to `7.0.40` for the production VM kernel compatibility requirement.
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose up --build -d
 ```
 
@@ -205,7 +207,7 @@ Do not start Doctor until Executor is healthy.
 ## 6. Generate Doctor's non-secret `.env`
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 ./scripts/init-env.py
 ```
 
@@ -239,7 +241,7 @@ cp .env /tmp/spider-doctor.env.backup
 diff -u .env.example .env || true
 ```
 
-Use `./scripts/init-env.py --force` only after reviewing the backup and confirming the checkout path is `/home/spider/projects/spider-doctor`.
+Use `./scripts/init-env.py --force` only after reviewing the backup and confirming the checkout path is `/home/spider/projects/spider-runtime/spider-doctor`.
 
 ---
 
@@ -248,7 +250,7 @@ Use `./scripts/init-env.py --force` only after reviewing the backup and confirmi
 Run this only during first setup or an intentional Hermes-home reseed:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 ./scripts/configure-hermes.sh
 ```
 
@@ -291,7 +293,7 @@ The task seed is deployment-generated. The script intentionally removes its old 
 ## 8. Start Spider Doctor
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 ./scripts/start.sh
 ```
 
@@ -461,7 +463,7 @@ Executor then consumes the succeeded Doctor handoff, provisions the exact commit
 After the canary succeeds, open:
 
 ```text
-/home/spider/projects/spider-devops/TODO.md
+/home/spider/projects/spider-runtime/spider-devops/TODO.md
 ```
 
 Each checklist item contains a shell-safe `curl` using a quoted JSON heredoc. Run one request at a time initially and verify the returned task ID before moving to a larger batch.
@@ -475,7 +477,7 @@ Some source IDs in the supplied list contain spaces or begin with `_`/`-`. `TODO
 ### Update Executor
 
 ```bash
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 git status --short --branch
 git pull --ff-only
 docker compose up --build -d
@@ -493,7 +495,7 @@ docker ps --filter 'label=spider-doctor.managed=true' --format '{{.Names}} {{.St
 If no task is running:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 git status --short --branch
 git pull --ff-only
 ./scripts/start.sh
@@ -532,7 +534,7 @@ Current launcher redirects uv, pip, and XDG caches into bounded, non-executable 
 Diagnose a task:
 
 ```bash
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 ./scripts/diagnose-task-storage.sh TASK_ID
 ```
 
@@ -603,17 +605,17 @@ If missing, recover from a reviewed `.env` backup or regenerate machine settings
 
 ```bash
 # Executor
-cd /home/spider/projects/spider-executor
+cd /home/spider/projects/spider-runtime/spider-executor
 docker compose ps -a
 curl --fail-with-body http://127.0.0.1:8000/health/ready
 
 # Doctor
-cd /home/spider/projects/spider-doctor
+cd /home/spider/projects/spider-runtime/spider-doctor
 docker compose ps -a
 python3 scripts/preflight.py
 
 # Repositories
-for repo in spider-scripts spider-executor spider-doctor spider-devops; do
+for repo in spider-scripts spider-runtime; do
   git -C "/home/spider/projects/$repo" status --short --branch
 done
 ```
