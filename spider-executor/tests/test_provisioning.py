@@ -82,3 +82,26 @@ def test_provision_scripts_refuses_dirty_checkout(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="dirty"):
         provision_scripts(repository, release)
+
+
+def test_provision_scripts_accepts_release_already_contained_in_checkout(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    runtime = tmp_path / "runtime"
+    subprocess.run(["git", "clone", "-q", str(remote), str(runtime)], check=True)
+    (runtime / "base.txt").write_text("base")
+    git(runtime, "add", ".")
+    git(runtime, "-c", "user.name=T", "-c", "user.email=t@example.test", "commit", "-m", "base")
+    older = git(runtime, "rev-parse", "HEAD")
+    (runtime / "next.txt").write_text("next")
+    git(runtime, "add", ".")
+    git(runtime, "-c", "user.name=T", "-c", "user.email=t@example.test", "commit", "-m", "next")
+    tip = git(runtime, "rev-parse", "HEAD")
+    git(runtime, "push", "origin", "HEAD:main")
+    git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+
+    # The checkout already contains the older commit; provisioning must not
+    # move backwards and must not fail.
+    provision_scripts(runtime, older)
+
+    assert git(runtime, "rev-parse", "HEAD") == tip

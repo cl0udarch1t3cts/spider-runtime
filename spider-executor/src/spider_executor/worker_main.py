@@ -6,7 +6,7 @@ import time
 
 from spider_executor.artifacts import LocalArtifactStore
 from spider_executor.remote_runner import HttpSpiderRunner
-from spider_executor.runtime import create_control
+from spider_executor.runtime import create_control, release_contains
 from spider_executor.settings import Settings
 from spider_executor.worker import ExecutorWorker
 
@@ -25,11 +25,15 @@ def main() -> None:
         settings.runner_url,
         timeout_seconds=settings.runner_timeout_seconds + 30,
     )
+    scripts_root = settings.scripts_root.resolve()
     worker = ExecutorWorker(
         service,
         runner,
         worker_id=settings.worker_id,
         artifacts=artifacts,
+        release_contains=lambda ancestor, descendant: release_contains(
+            scripts_root, ancestor, descendant
+        ),
     )
     while True:
         run = worker.process_one()

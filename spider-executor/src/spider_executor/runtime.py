@@ -54,6 +54,16 @@ def provision_scripts(
             raise RuntimeError("refusing to provision a dirty spider-scripts checkout")
         if current_scripts_release(repository) == release:
             return
+        contained = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", release, "HEAD"],
+            cwd=repository,
+            timeout=30,
+            check=False,
+        )
+        if contained.returncode == 0:
+            # The checkout already contains this commit; it never moves
+            # backwards, so the requested release is provisioned.
+            return
         _git(repository, "fetch", remote, f"refs/heads/{branch}")
         fetched = _git(repository, "rev-parse", "FETCH_HEAD^{commit}")
         published = subprocess.run(
@@ -75,6 +85,21 @@ def provision_scripts(
         _git(repository, "merge", "--ff-only", release)
         if current_scripts_release(repository) != release:
             raise RuntimeError("spider-scripts provisioning did not activate the requested commit")
+
+
+def release_contains(repository: Path, ancestor: str, descendant: str) -> bool:
+    """True when `descendant` contains `ancestor` in the scripts checkout."""
+    if re.fullmatch(r"[0-9a-f]{40}", ancestor) is None or re.fullmatch(
+        r"[0-9a-f]{40}", descendant
+    ) is None:
+        return False
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=repository.resolve(),
+        timeout=30,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def create_control(settings: Settings) -> MongoControlService:

@@ -329,3 +329,57 @@ def test_new_failure_does_not_retarget_queued_create_task() -> None:
     assert task["source_run_id"] is None
     assert task["failure_class"] == "NEW_SCRAPER"
     assert task["errors"] == []
+
+
+def test_worker_accepts_run_from_descendant_release_and_records_actual_sha() -> None:
+    # The shared spider-scripts checkout only moves forward; a run may execute
+    # at a newer commit that contains the entry's pinned activation commit.
+    newer = "b" * 40
+    service = make_service()
+    service.put_entry(
+        activated_entry(
+            website="https://example.com",
+            validation={"required_fields": ["NAME"], "minimum_non_null_fields": 1},
+        )
+    )
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="descendant"))
+    result = successful_result()
+    result.scraper_release = newer
+    checked = []
+
+    def release_contains(ancestor: str, descendant: str) -> bool:
+        checked.append((ancestor, descendant))
+        return (ancestor, descendant) == (RELEASE, newer)
+
+    worker = ExecutorWorker(
+        service,
+        FakeRunner(result),
+        worker_id="worker-1",
+        release_contains=release_contains,
+    )
+
+    run = worker.process_one()
+
+    assert run.status == JobStatus.SUCCEEDED
+    assert run.scraper_release == newer
+    assert checked == [(RELEASE, newer)]
+
+
+def test_worker_still_rejects_unrelated_release_with_lineage_check() -> None:
+    service = make_service()
+    service.put_entry(activated_entry(website="https://example.com"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="unrelated"))
+    result = successful_result()
+    result.scraper_release = "c" * 40
+
+    worker = ExecutorWorker(
+        service,
+        FakeRunner(result),
+        worker_id="worker-1",
+        release_contains=lambda ancestor, descendant: False,
+    )
+
+    run = worker.process_one()
+
+    assert run.status == JobStatus.FAILED
+    assert run.failure_class == FailureClass.RELEASE_MISMATCH

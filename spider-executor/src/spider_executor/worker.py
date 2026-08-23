@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Protocol
 from urllib.parse import urlparse
 
@@ -22,11 +23,25 @@ class ExecutorWorker:
         *,
         worker_id: str,
         artifacts: LocalArtifactStore | None = None,
+        release_contains: Callable[[str, str], bool] | None = None,
     ) -> None:
         self.service = service
         self.runner = runner
         self.worker_id = worker_id
         self.artifacts = artifacts
+        # release_contains(ancestor, descendant): the shared checkout only
+        # moves forward, so a run at a commit containing the entry's pinned
+        # release is valid. Without the callable, only exact matches pass.
+        self.release_contains = release_contains
+
+    def _release_acceptable(self, expected: str, actual: str | None) -> bool:
+        if actual == expected:
+            return True
+        return (
+            self.release_contains is not None
+            and actual is not None
+            and self.release_contains(expected, actual)
+        )
 
     def process_one(self) -> ExecutionRun | None:
         self.service.consume_next_doctor_handoff()
@@ -88,7 +103,9 @@ class ExecutorWorker:
                 FailureClass.IDENTITY_MISMATCH,
                 [f"record entry_id mismatch: expected {job.entry_id}, got {result.record.entry_id}"],
             )
-        if entry.scraper_release and result.scraper_release != entry.scraper_release:
+        if entry.scraper_release and not self._release_acceptable(
+            entry.scraper_release, result.scraper_release
+        ):
             return self._fail(
                 job.id,
                 job.lease.token,
