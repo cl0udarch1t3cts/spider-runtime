@@ -42,6 +42,14 @@ def main() -> None:
     )
     assert updated.businessname == "Updated"
 
+    # enqueue() only accepts the activated entry/release pair; mirror the
+    # activation record that consume_doctor_handoff() writes.
+    db.runtime_state.replace_one(
+        {"_id": "activated_entry"},
+        {"_id": "activated_entry", "entry_id": "example", "scraper_release": "a" * 40},
+        upsert=True,
+    )
+
     job = service.enqueue(ExecutionJob(entry_id="example", idempotency_key="integration:1"))
     assert service.enqueue(ExecutionJob(entry_id="example", idempotency_key="integration:1")).id == job.id
     claimed = service.claim("integration-worker")
