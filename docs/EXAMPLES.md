@@ -1383,7 +1383,7 @@ Run these commands on `spider-01`. Each request is asynchronous and creates or r
   JSON
   ```
 
-- [ ] `DoKUXpc7 zHomXPxvHN6t5g` — Restaurant Am Brühlbach — Kappenbühlweg 11, 8049 Zürich
+- [ ] `DoKUXpc7zHomXPxvHN6t5g` — Restaurant Am Brühlbach — Kappenbühlweg 11, 8049 Zürich
   - **Warning:** The source `entry_id` begins with or contains unsupported whitespace/punctuation. The API is expected to reject it; the value is preserved exactly for correction.
 
   ```bash
@@ -1392,7 +1392,7 @@ Run these commands on `spider-01`. Each request is asynchronous and creates or r
     -H 'content-type: application/json' \
     --data-binary @- <<'JSON'
   {
-    "entry_id": "DoKUXpc7 zHomXPxvHN6t5g",
+    "entry_id": "DoKUXpc7zHomXPxvHN6t5g",
     "businessname": "Restaurant Am Brühlbach",
     "address": "Kappenbühlweg 11, 8049 Zürich"
   }

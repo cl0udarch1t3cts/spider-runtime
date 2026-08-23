@@ -32,8 +32,9 @@ class Settings(BaseSettings):
     agent_max_turns: int = Field(default=40, ge=1, le=100)
     # Concurrent Hermes task launches. Size against host capacity: each task
     # container is capped at 2 CPUs / 4g, and the broker concurrency limit
-    # must be at least this value.
-    max_parallel_tasks: int = Field(default=2, ge=1, le=8)
+    # must be at least this value. Values beyond the host's CPU/memory budget
+    # slow every task down and risk agent timeouts and OOM kills.
+    max_parallel_tasks: int = Field(default=2, ge=1, le=16)
     # Subscription budget gate: consulted before every Hermes launch. The
     # weekly contingent is paced at budget_daily_percent per day, capped so
     # budget_reserve_percent always stays free for interactive development.
