@@ -278,8 +278,7 @@ export default function Dashboard() {
           <div>
             <h1>SPIDER CONSOLE</h1>
             <span className="tagline">
-              Cloud Architects GmbH · Cloud-Native Software &amp; Architecture
-              Experts
+              Cloud Architects
             </span>
           </div>
         </div>
