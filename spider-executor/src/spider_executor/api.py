@@ -5,7 +5,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from spider_executor.models import (
     Entry,
@@ -33,6 +33,12 @@ class Control(Protocol):
     def stats(self) -> dict: ...
     def doctor_paused(self) -> bool: ...
     def set_doctor_paused(self, paused: bool) -> bool: ...
+    def doctor_budget(self) -> dict: ...
+    def set_doctor_budget(
+        self,
+        daily_percent: float | None = None,
+        reserve_percent: float | None = None,
+    ) -> dict: ...
 
 
 class JobRequest(BaseModel):
@@ -109,12 +115,22 @@ class OverviewStats(BaseModel):
     execution_jobs: dict[str, int]
     execution_runs: dict[str, int]
     doctor_paused: bool = False
+    doctor_budget: dict[str, float | None] | None = None
+    doctor_throughput: dict[str, int] | None = None
 
 
 class DoctorControl(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    paused: bool
+    paused: bool | None = None
+    daily_percent: float | None = Field(default=None, gt=0, le=100)
+    reserve_percent: float | None = Field(default=None, ge=0, lt=100)
+
+    @model_validator(mode="after")
+    def _at_least_one_field(self) -> "DoctorControl":
+        if self.paused is None and self.daily_percent is None and self.reserve_percent is None:
+            raise ValueError("provide paused, daily_percent, or reserve_percent")
+        return self
 
 
 def create_app(control: Control) -> FastAPI:
@@ -202,10 +218,14 @@ def create_app(control: Control) -> FastAPI:
 
     @app.get("/api/v1/doctor-control", response_model=DoctorControl)
     def get_doctor_control() -> dict:
-        return {"paused": control.doctor_paused()}
+        return {"paused": control.doctor_paused(), **control.doctor_budget()}
 
     @app.put("/api/v1/doctor-control", response_model=DoctorControl)
     def set_doctor_control(request: DoctorControl) -> dict:
-        return {"paused": control.set_doctor_paused(request.paused)}
+        if request.paused is not None:
+            control.set_doctor_paused(request.paused)
+        if request.daily_percent is not None or request.reserve_percent is not None:
+            control.set_doctor_budget(request.daily_percent, request.reserve_percent)
+        return {"paused": control.doctor_paused(), **control.doctor_budget()}
 
     return app

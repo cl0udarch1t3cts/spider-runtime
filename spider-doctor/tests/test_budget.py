@@ -127,3 +127,55 @@ def test_gate_rejects_nonsensical_budget_configuration() -> None:
         SubscriptionBudgetGate("http://broker:8645/usage", "proxy-token", daily_percent=0)
     with pytest.raises(ValueError):
         SubscriptionBudgetGate("http://broker:8645/usage", "proxy-token", reserve_percent=100)
+
+
+def test_gate_prefers_runtime_override_over_configured_percents() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=json.dumps(weekly_payload(25.0, elapsed_days=2.5))
+        )
+
+    override = {"daily_percent": 20.0, "reserve_percent": 10.0}
+    gate = SubscriptionBudgetGate(
+        "http://broker:8645/usage",
+        "proxy-token",
+        daily_percent=10.0,
+        reserve_percent=30.0,
+        cache_seconds=0.0,
+        transport=httpx.MockTransport(handler),
+        overrides=lambda: dict(override),
+    )
+
+    decision = gate.check()
+    assert decision.allowed
+    assert "usage 25.0% of 60.0% allowed" in decision.detail
+
+    # Overrides are read per evaluation, so a change applies without restart.
+    override["daily_percent"] = 5.0
+    decision = gate.check()
+    assert not decision.allowed
+    assert "usage 25.0% of 15.0% allowed" in decision.detail
+
+
+def test_gate_survives_a_broken_overrides_provider() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=json.dumps(weekly_payload(25.0, elapsed_days=2.5))
+        )
+
+    def broken() -> dict:
+        raise RuntimeError("mongo unavailable")
+
+    gate = SubscriptionBudgetGate(
+        "http://broker:8645/usage",
+        "proxy-token",
+        daily_percent=10.0,
+        reserve_percent=30.0,
+        cache_seconds=0.0,
+        transport=httpx.MockTransport(handler),
+        overrides=broken,
+    )
+
+    decision = gate.check()
+    assert decision.allowed
+    assert "of 30.0% allowed" in decision.detail

@@ -48,6 +48,16 @@ export interface Overview {
       execution_jobs: Record<string, number>;
       execution_runs: Record<string, number>;
       doctor_paused?: boolean;
+      doctor_budget?: {
+        daily_percent: number | null;
+        reserve_percent: number | null;
+      };
+      doctor_throughput?: {
+        succeeded_1h: number;
+        succeeded_24h: number;
+        finished_1h: number;
+        finished_24h: number;
+      };
     };
     tasks?: DoctorTask[];
     runs?: Run[];
@@ -83,9 +93,16 @@ export interface ScrapedRecord {
   error?: string;
 }
 
+// The executor serializes Mongo's naive-UTC datetimes without a timezone
+// suffix; parsed bare, JS reads them as local time (hence "2h ago" for a run
+// that just started, on a UTC+2 machine). Treat suffix-less ISO as UTC.
+export function parseUtc(iso: string): Date {
+  return new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`);
+}
+
 export function ago(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  const seconds = Math.max(0, (Date.now() - parseUtc(iso).getTime()) / 1000);
   if (seconds < 90) return `${Math.round(seconds)}s ago`;
   if (seconds < 5400) return `${Math.round(seconds / 60)}m ago`;
   if (seconds < 129_600) return `${Math.round(seconds / 3600)}h ago`;
@@ -108,7 +125,7 @@ export function isLive(task: DoctorTask): boolean {
   return (
     task.status === "running" &&
     !!task.lease?.expires_at &&
-    new Date(task.lease.expires_at).getTime() > Date.now()
+    parseUtc(task.lease.expires_at).getTime() > Date.now()
   );
 }
 

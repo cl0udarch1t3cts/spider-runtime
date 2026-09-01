@@ -138,8 +138,12 @@ export async function fetchUsage(): Promise<{
 export function computeBudget(
   windows: UsageWindow[],
   source: string,
+  dailyOverride?: number | null,
+  reserveOverride?: number | null,
 ): Budget | null {
   if (!windows.length) return null;
+  const dailyPercent = dailyOverride ?? BUDGET_DAILY_PERCENT;
+  const reservePercent = reserveOverride ?? BUDGET_RESERVE_PERCENT;
   const withDuration = windows.filter((w) => w.window_minutes);
   const weekly = withDuration.length
     ? withDuration.reduce((a, b) =>
@@ -148,7 +152,7 @@ export function computeBudget(
     : (windows.find((w) => w.name === "secondary" || w.name === "weekly") ??
       windows.reduce((a, b) => (a.used_percent >= b.used_percent ? a : b)));
 
-  const cap = 100 - BUDGET_RESERVE_PERCENT;
+  const cap = 100 - reservePercent;
   let allowed = cap;
   let day: number | null = null;
   let totalDays: number | null = null;
@@ -160,7 +164,7 @@ export function computeBudget(
     );
     totalDays = Math.max(1, Math.round(windowSeconds / 86_400));
     day = Math.min(Math.floor(elapsed / 86_400) + 1, totalDays);
-    allowed = Math.min(cap, BUDGET_DAILY_PERCENT * day);
+    allowed = Math.min(cap, dailyPercent * day);
   }
   return {
     usedPercent: weekly.used_percent,
@@ -168,8 +172,8 @@ export function computeBudget(
     day,
     totalDays,
     resetsInSeconds: weekly.resets_in_seconds,
-    dailyPercent: BUDGET_DAILY_PERCENT,
-    reservePercent: BUDGET_RESERVE_PERCENT,
+    dailyPercent,
+    reservePercent,
     decision: weekly.used_percent < allowed ? "proceed" : "defer",
     source,
   };

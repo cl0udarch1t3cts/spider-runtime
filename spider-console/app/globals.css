@@ -453,3 +453,13 @@ tr.clickable {
 tr.clickable:hover td {
   background: rgba(91, 77, 229, 0.12);
 }
+
+.search.pct {
+  width: 64px;
+  flex: none;
+  padding: 0.1rem 0.4rem;
+}
+
+.budget-editor {
+  white-space: nowrap;
+}

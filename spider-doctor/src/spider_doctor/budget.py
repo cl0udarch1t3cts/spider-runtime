@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
@@ -48,6 +49,7 @@ class SubscriptionBudgetGate:
         cache_seconds: float = 300.0,
         timeout_seconds: float = 30.0,
         transport: httpx.BaseTransport | None = None,
+        overrides: Callable[[], dict] | None = None,
     ) -> None:
         if not 0 < daily_percent <= 100:
             raise ValueError("daily budget percent must be within (0, 100]")
@@ -57,6 +59,7 @@ class SubscriptionBudgetGate:
         self.daily_percent = daily_percent
         self.reserve_percent = reserve_percent
         self.cache_seconds = cache_seconds
+        self.overrides = overrides
         self._client = httpx.Client(
             headers={"Authorization": f"Bearer {client_token}"},
             timeout=httpx.Timeout(timeout_seconds, connect=20.0),
@@ -78,6 +81,21 @@ class SubscriptionBudgetGate:
             logger.warning("Doctor budget decision: defer (%s)", decision.detail)
         return decision
 
+    def _current_percents(self) -> tuple[float, float]:
+        daily, reserve = self.daily_percent, self.reserve_percent
+        if self.overrides is not None:
+            try:
+                override = self.overrides() or {}
+                candidate_daily = override.get("daily_percent")
+                candidate_reserve = override.get("reserve_percent")
+                if isinstance(candidate_daily, (int, float)) and 0 < candidate_daily <= 100:
+                    daily = float(candidate_daily)
+                if isinstance(candidate_reserve, (int, float)) and 0 <= candidate_reserve < 100:
+                    reserve = float(candidate_reserve)
+            except Exception as exc:  # noqa: BLE001 - overrides must not stall repairs
+                logger.warning("budget override unavailable, using configured percents: %s", exc)
+        return daily, reserve
+
     def _evaluate(self) -> BudgetDecision:
         try:
             source, windows = self._fetch_usage()
@@ -89,13 +107,14 @@ class SubscriptionBudgetGate:
         if weekly is None:
             return BudgetDecision(True, "subscription usage reported no windows; failing open")
 
-        cap = 100.0 - self.reserve_percent
+        daily_percent, reserve_percent = self._current_percents()
+        cap = 100.0 - reserve_percent
         if weekly.window_minutes and weekly.resets_in_seconds is not None:
             window_seconds = weekly.window_minutes * 60
             elapsed = min(window_seconds, max(0, window_seconds - weekly.resets_in_seconds))
             total_days = max(1, round(window_seconds / SECONDS_PER_DAY))
             day = min(int(elapsed // SECONDS_PER_DAY) + 1, total_days)
-            allowed = min(cap, self.daily_percent * day)
+            allowed = min(cap, daily_percent * day)
             pacing = (
                 f"day {day}/{total_days} of the {weekly.name} window, "
                 f"resets in {_format_duration(weekly.resets_in_seconds)}"
@@ -105,8 +124,8 @@ class SubscriptionBudgetGate:
             pacing = f"{weekly.name} window timing unknown, enforcing the weekly cap only"
         detail = (
             f"usage {weekly.used_percent:.1f}% of {allowed:.1f}% allowed via {source}; "
-            f"{pacing}; daily job budget {self.daily_percent:g}%, "
-            f"development reserve {self.reserve_percent:g}%"
+            f"{pacing}; daily job budget {daily_percent:g}%, "
+            f"development reserve {reserve_percent:g}%"
         )
         return BudgetDecision(weekly.used_percent < allowed, detail)
 

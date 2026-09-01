@@ -1,9 +1,96 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { StatusBadge } from "@/components/status-badge";
 import { ago, duration, isLive, sha, sortedStatusCounts } from "@/lib/types";
+
+function BudgetEditor({
+  dailyPercent,
+  reservePercent,
+}: {
+  dailyPercent: number;
+  reservePercent: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [daily, setDaily] = useState(String(dailyPercent));
+  const [reserve, setReserve] = useState(String(reservePercent));
+  const [note, setNote] = useState<string | null>(null);
+
+  const apply = async () => {
+    setNote("saving…");
+    try {
+      const response = await fetch("/api/doctor-control", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          daily_percent: Number(daily),
+          reserve_percent: Number(reserve),
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (response.ok) {
+        setNote("saved — the Doctor applies it within ~5 minutes");
+        setEditing(false);
+      } else {
+        setNote(String(body?.detail?.[0]?.msg ?? body?.error ?? `HTTP ${response.status}`));
+      }
+    } catch (exc) {
+      setNote(String(exc));
+    }
+  };
+
+  if (!editing) {
+    return (
+      <span>
+        <button
+          className="link"
+          title="Change the Doctor's daily job budget and development reserve"
+          onClick={() => {
+            setDaily(String(dailyPercent));
+            setReserve(String(reservePercent));
+            setNote(null);
+            setEditing(true);
+          }}
+        >
+          (adjust)
+        </button>
+        {note ? <span className="note"> {note}</span> : null}
+      </span>
+    );
+  }
+  return (
+    <span className="budget-editor">
+      daily{" "}
+      <input
+        className="search pct"
+        type="number"
+        min={1}
+        max={100}
+        value={daily}
+        onChange={(event) => setDaily(event.target.value)}
+      />
+      % · reserve{" "}
+      <input
+        className="search pct"
+        type="number"
+        min={0}
+        max={99}
+        value={reserve}
+        onChange={(event) => setReserve(event.target.value)}
+      />
+      %{" "}
+      <button className="action" onClick={apply}>
+        apply
+      </button>{" "}
+      <button className="action secondary" onClick={() => setEditing(false)}>
+        cancel
+      </button>
+      {note ? <span className="note"> {note}</span> : null}
+    </span>
+  );
+}
 
 export default function OverviewPage() {
   const { data, error } = useOverview();
@@ -64,7 +151,11 @@ export default function OverviewPage() {
                 ? ` · day ${budget.day}/${budget.totalDays}`
                 : ""}{" "}
               · resets in {duration(budget.resetsInSeconds)} · daily{" "}
-              {budget.dailyPercent}% · reserve {budget.reservePercent}%
+              {budget.dailyPercent}% · reserve {budget.reservePercent}%{" "}
+              <BudgetEditor
+                dailyPercent={budget.dailyPercent}
+                reservePercent={budget.reservePercent}
+              />
             </p>
           </>
         ) : (
@@ -105,6 +196,46 @@ export default function OverviewPage() {
           </div>
         ) : null}
       </section>
+
+      {stats?.doctor_throughput ? (
+        <section className="panel">
+          <h2>Doctor progress</h2>
+          <div className="counts">
+            <div className="count">
+              <div className="value">{stats.doctor_throughput.succeeded_1h}</div>
+              <div className="label">succeeded / 1h</div>
+            </div>
+            <div className="count">
+              <div className="value">{stats.doctor_throughput.succeeded_24h}</div>
+              <div className="label">succeeded / 24h</div>
+            </div>
+            <div className="count">
+              <div className="value">{stats.doctor_throughput.finished_1h}</div>
+              <div className="label">finished / 1h</div>
+            </div>
+            <div className="count">
+              <div className="value">{stats.doctor_throughput.finished_24h}</div>
+              <div className="label">finished / 24h</div>
+            </div>
+          </div>
+          <p className="muted">
+            {(() => {
+              const queued = stats.doctor_tasks["queued"] ?? 0;
+              const rate = stats.doctor_throughput.finished_1h;
+              if (!queued) return "queue is empty";
+              if (!rate) return `${queued} queued · no tasks finished in the last hour`;
+              const hours = queued / rate;
+              const eta =
+                hours >= 48
+                  ? `~${Math.round(hours / 24)}d`
+                  : hours >= 1.5
+                    ? `~${Math.round(hours)}h`
+                    : `~${Math.max(1, Math.round(hours * 60))}m`;
+              return `${queued} queued · ${eta} to drain at the last hour's pace`;
+            })()}
+          </p>
+        </section>
+      ) : null}
 
       <section className="panel wide">
         <h2>

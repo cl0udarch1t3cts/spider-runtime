@@ -309,6 +309,73 @@ def test_api_bounds_console_listing_limits() -> None:
     assert client.get("/api/v1/doctor-tasks?limit=201").status_code == 422
 
 
+def test_doctor_budget_override_round_trip_and_pause_preservation() -> None:
+    service = seeded_service()
+
+    assert service.doctor_budget() == {"daily_percent": None, "reserve_percent": None}
+
+    service.set_doctor_budget(daily_percent=20.0, reserve_percent=15.0)
+    assert service.doctor_budget() == {"daily_percent": 20.0, "reserve_percent": 15.0}
+
+    # Toggling pause must not wipe the stored budget override.
+    service.set_doctor_paused(True)
+    assert service.doctor_paused() is True
+    assert service.doctor_budget() == {"daily_percent": 20.0, "reserve_percent": 15.0}
+
+    # Partial update: only the provided knob changes.
+    service.set_doctor_budget(daily_percent=25.0)
+    assert service.doctor_budget() == {"daily_percent": 25.0, "reserve_percent": 15.0}
+
+    stats = service.stats()
+    assert stats["doctor_budget"] == {"daily_percent": 25.0, "reserve_percent": 15.0}
+
+
+def test_api_doctor_control_accepts_budget_fields() -> None:
+    service = seeded_service()
+    client = TestClient(create_app(service))
+
+    response = client.put(
+        "/api/v1/doctor-control", json={"daily_percent": 30, "reserve_percent": 10}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["daily_percent"] == 30
+    assert body["reserve_percent"] == 10
+
+    # paused untouched by a budget-only update, budget untouched by pause.
+    assert client.put("/api/v1/doctor-control", json={"paused": True}).status_code == 200
+    current = client.get("/api/v1/doctor-control").json()
+    assert current == {"paused": True, "daily_percent": 30, "reserve_percent": 10}
+
+    assert client.put("/api/v1/doctor-control", json={"daily_percent": 0}).status_code == 422
+    assert client.put("/api/v1/doctor-control", json={"daily_percent": 101}).status_code == 422
+    assert client.put("/api/v1/doctor-control", json={"reserve_percent": 100}).status_code == 422
+
+
+def test_stats_report_doctor_task_throughput() -> None:
+    db = mongomock.MongoClient().spider
+    service = MongoControlService(db)
+    now = datetime.now(UTC)
+    db.doctor_tasks.insert_many(
+        [
+            {"_id": "t1", "status": "succeeded", "updated_at": now - timedelta(minutes=10)},
+            {"_id": "t2", "status": "succeeded", "updated_at": now - timedelta(hours=5)},
+            {"_id": "t3", "status": "exhausted", "updated_at": now - timedelta(minutes=20)},
+            {"_id": "t4", "status": "succeeded", "updated_at": now - timedelta(days=2)},
+            {"_id": "t5", "status": "queued", "updated_at": now - timedelta(minutes=1)},
+        ]
+    )
+
+    throughput = service.stats()["doctor_throughput"]
+
+    assert throughput == {
+        "succeeded_1h": 1,
+        "succeeded_24h": 2,
+        "finished_1h": 2,
+        "finished_24h": 3,
+    }
+
+
 def test_doctor_pause_flag_round_trip_and_stats_exposure() -> None:
     service = seeded_service()
 
@@ -332,15 +399,22 @@ def test_api_exposes_doctor_pause_control() -> None:
             self.paused = paused
             return paused
 
+        def doctor_budget(self):
+            return {"daily_percent": None, "reserve_percent": None}
+
+        def set_doctor_budget(self, daily_percent=None, reserve_percent=None):
+            return self.doctor_budget()
+
     control = PausableControl()
     client = TestClient(create_app(control))
 
-    assert client.get("/api/v1/doctor-control").json() == {"paused": False}
+    assert client.get("/api/v1/doctor-control").json()["paused"] is False
     response = client.put("/api/v1/doctor-control", json={"paused": True})
     assert response.status_code == 200
-    assert response.json() == {"paused": True}
+    assert response.json()["paused"] is True
     assert control.paused is True
-    assert client.put("/api/v1/doctor-control", json={"paused": False}).json() == {
-        "paused": False
-    }
+    assert (
+        client.put("/api/v1/doctor-control", json={"paused": False}).json()["paused"]
+        is False
+    )
     assert client.put("/api/v1/doctor-control", json={}).status_code == 422

@@ -36,6 +36,18 @@ def create_worker(settings: Settings) -> DoctorWorker:
         )
     if not settings.hermes_image:
         raise RuntimeError("SPIDER_DOCTOR_HERMES_IMAGE must be set to an image pinned by digest")
+    client = MongoClient(settings.mongodb_uri, serverSelectionTimeoutMS=5000)
+    db = client[settings.mongodb_database]
+
+    def budget_overrides() -> dict:
+        # Console-set override in runtime_state; the gate validates the values
+        # and falls back to the configured percents when absent or invalid.
+        control = db.runtime_state.find_one({"_id": "doctor_control"}) or {}
+        return {
+            "daily_percent": control.get("daily_percent"),
+            "reserve_percent": control.get("reserve_percent"),
+        }
+
     budget_gate = None
     if settings.broker_usage_url:
         if settings.proxy_token_file is None:
@@ -48,9 +60,8 @@ def create_worker(settings: Settings) -> DoctorWorker:
             daily_percent=settings.budget_daily_percent,
             reserve_percent=settings.budget_reserve_percent,
             cache_seconds=settings.budget_cache_seconds,
+            overrides=budget_overrides,
         )
-    client = MongoClient(settings.mongodb_uri, serverSelectionTimeoutMS=5000)
-    db = client[settings.mongodb_database]
     repository = MongoDoctorTaskRepository(db.doctor_tasks)
     repository.ensure_indexes()
 

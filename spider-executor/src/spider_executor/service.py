@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -555,12 +555,41 @@ class MongoControlService:
         return bool(control and control.get("paused"))
 
     def set_doctor_paused(self, paused: bool) -> bool:
-        self.db.runtime_state.replace_one(
+        # $set, not replace: the same document carries the budget override.
+        self.db.runtime_state.update_one(
             {"_id": "doctor_control"},
-            {"_id": "doctor_control", "paused": bool(paused), "updated_at": datetime.now(UTC)},
+            {"$set": {"paused": bool(paused), "updated_at": datetime.now(UTC)}},
             upsert=True,
         )
         return bool(paused)
+
+    def doctor_budget(self) -> dict:
+        control = self.db.runtime_state.find_one({"_id": "doctor_control"}) or {}
+        daily = control.get("daily_percent")
+        reserve = control.get("reserve_percent")
+        return {
+            "daily_percent": float(daily) if daily is not None else None,
+            "reserve_percent": float(reserve) if reserve is not None else None,
+        }
+
+    def set_doctor_budget(
+        self,
+        daily_percent: float | None = None,
+        reserve_percent: float | None = None,
+    ) -> dict:
+        updates: dict = {"updated_at": datetime.now(UTC)}
+        if daily_percent is not None:
+            if not 0 < daily_percent <= 100:
+                raise ValueError("daily_percent must be within (0, 100]")
+            updates["daily_percent"] = float(daily_percent)
+        if reserve_percent is not None:
+            if not 0 <= reserve_percent < 100:
+                raise ValueError("reserve_percent must be within [0, 100)")
+            updates["reserve_percent"] = float(reserve_percent)
+        self.db.runtime_state.update_one(
+            {"_id": "doctor_control"}, {"$set": updates}, upsert=True
+        )
+        return self.doctor_budget()
 
     # --- read-only console listings -----------------------------------------
 
@@ -665,6 +694,26 @@ class MongoControlService:
             "execution_jobs": by_status(self.db.execution_jobs),
             "execution_runs": by_status(self.db.execution_runs),
             "doctor_paused": self.doctor_paused(),
+            "doctor_budget": self.doctor_budget(),
+            "doctor_throughput": self._doctor_throughput(),
+        }
+
+    def _doctor_throughput(self) -> dict:
+        now = datetime.now(UTC)
+        terminal = ["succeeded", "failed", "exhausted", "human_review_required"]
+
+        def count(statuses: list[str], since: datetime) -> int:
+            return self.db.doctor_tasks.count_documents(
+                {"status": {"$in": statuses}, "updated_at": {"$gte": since}}
+            )
+
+        hour = now - timedelta(hours=1)
+        day = now - timedelta(hours=24)
+        return {
+            "succeeded_1h": count(["succeeded"], hour),
+            "succeeded_24h": count(["succeeded"], day),
+            "finished_1h": count(terminal, hour),
+            "finished_24h": count(terminal, day),
         }
 
     @contextmanager
