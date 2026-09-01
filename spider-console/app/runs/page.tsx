@@ -6,7 +6,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
-import { sha, type Run } from "@/lib/types";
+import { sha, type Run, runDuration } from "@/lib/types";
 import { replaceParam } from "@/lib/url-state";
 
 type Filter = "all" | "succeeded" | "failing";
@@ -110,6 +110,7 @@ function RunsView() {
                 <th>failure</th>
                 <th>release</th>
                 <th>started</th>
+                <th title="Wall-clock time from run start to finish">duration</th>
               </tr>
             </thead>
             <tbody>
@@ -130,6 +131,7 @@ function RunsView() {
                   <td>{run.failure_class ?? "—"}</td>
                   <td>{sha(run.scraper_release)}</td>
                   <td><Ago iso={run.started_at} /></td>
+                <td>{runDuration(run.started_at, run.finished_at)}</td>
                 </tr>
               ))}
             </tbody>

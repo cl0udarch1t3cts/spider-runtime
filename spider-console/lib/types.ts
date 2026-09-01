@@ -158,3 +158,15 @@ export function fieldText(value: unknown): string {
   if (typeof value === "string") return value;
   return JSON.stringify(value, null, 1);
 }
+
+export function runDuration(
+  started: string | null | undefined,
+  finished: string | null | undefined,
+): string {
+  if (!started) return "—";
+  if (!finished) return "running…";
+  const ms = parseUtc(finished).getTime() - parseUtc(started).getTime();
+  if (ms < 0) return "—";
+  const s = ms / 1000;
+  return s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`;
+}

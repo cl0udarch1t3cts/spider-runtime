@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
-import { duration, isLive, sha, sortedStatusCounts } from "@/lib/types";
+import { duration, isLive, sha, sortedStatusCounts, runDuration } from "@/lib/types";
 
 function BudgetEditor({
   dailyPercent,
@@ -308,6 +308,7 @@ export default function OverviewPage() {
                 <th>failure</th>
                 <th>release</th>
                 <th>started</th>
+                <th title="Wall-clock time from run start to finish">duration</th>
               </tr>
             </thead>
             <tbody>
@@ -327,6 +328,7 @@ export default function OverviewPage() {
                   <td>{run.failure_class ?? "—"}</td>
                   <td>{sha(run.scraper_release)}</td>
                   <td><Ago iso={run.started_at} /></td>
+                <td>{runDuration(run.started_at, run.finished_at)}</td>
                 </tr>
               ))}
             </tbody>

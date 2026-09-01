@@ -227,6 +227,7 @@ function EntryDetailView() {
                   <th>release</th>
                   <th>record</th>
                   <th>started</th>
+                <th title="Wall-clock time from run start to finish">duration</th>
                 </tr>
               </thead>
               <tbody>
@@ -251,6 +252,7 @@ function EntryDetailView() {
                       )}
                     </td>
                     <td><Ago iso={run.started_at} /></td>
+                <td>{runDuration(run.started_at, run.finished_at)}</td>
                   </tr>
                 ))}
               </tbody>
