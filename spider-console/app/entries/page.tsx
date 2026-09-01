@@ -121,7 +121,7 @@ function EntriesView() {
                 <th>entry</th>
                 <th>active</th>
                 <th>release</th>
-                <th>updated</th>
+                <th title="Time since the entry record last changed: re-registration or a new scraper release being activated. Not the last scrape - see the entry's runs for that">updated</th>
                 <th>actions</th>
               </tr>
             </thead>

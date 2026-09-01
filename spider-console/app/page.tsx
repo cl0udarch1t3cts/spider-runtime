@@ -122,7 +122,7 @@ export default function OverviewPage() {
                   <th>type</th>
                   <th>att</th>
                   <th>worker / lease</th>
-                  <th>updated</th>
+                  <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
                 </tr>
               </thead>
               <tbody>
@@ -213,7 +213,7 @@ export default function OverviewPage() {
                   <th>status</th>
                   <th>att</th>
                   <th>last error</th>
-                  <th>updated</th>
+                  <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
                 </tr>
               </thead>
               <tbody>

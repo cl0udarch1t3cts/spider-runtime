@@ -274,7 +274,7 @@ function EntryDetailView() {
                   <th>status</th>
                   <th>att</th>
                   <th>candidate</th>
-                  <th>updated</th>
+                  <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
                   <th>last error</th>
                 </tr>
               </thead>
