@@ -31,6 +31,30 @@ function RunsView() {
     replaceParam("filter", value === "all" ? null : value);
   const [failing, setFailing] = useState<Run[] | null>(null);
   const [failingError, setFailingError] = useState<string | null>(null);
+  const [retryNote, setRetryNote] = useState<string | null>(null);
+
+  const retry = async (entryId: string) => {
+    setRetryNote(`enqueueing ${entryId}…`);
+    try {
+      const response = await fetch("/api/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId }),
+      });
+      const body = await response.json().catch(() => null);
+      if (response.ok) {
+        setRetryNote(
+          `job ${String(body?.id ?? "").slice(0, 12)} queued for ${entryId} — a fresh run appears once the worker picks it up`,
+        );
+      } else {
+        setRetryNote(
+          `${entryId}: ${String(body?.detail ?? body?.error ?? `HTTP ${response.status}`)}`,
+        );
+      }
+    } catch (exc) {
+      setRetryNote(`${entryId}: ${String(exc)}`);
+    }
+  };
 
   // "still failing" is a per-entry latest-run view the server computes;
   // the other filters slice the recent-runs window from the overview.
@@ -100,6 +124,7 @@ function RunsView() {
         {failingError && filter === "failing" ? (
           <p className="error">{failingError}</p>
         ) : null}
+        {retryNote ? <p className="note">{retryNote}</p> : null}
         <div className="scroll tall">
           <table>
             <thead>
@@ -111,6 +136,7 @@ function RunsView() {
                 <th>release</th>
                 <th>started</th>
                 <th title="Wall-clock time from run start to finish">duration</th>
+                <th>actions</th>
               </tr>
             </thead>
             <tbody>
@@ -132,6 +158,15 @@ function RunsView() {
                   <td>{sha(run.scraper_release)}</td>
                   <td><Ago iso={run.started_at} /></td>
                 <td>{runDuration(run.started_at, run.finished_at)}</td>
+                  <td>
+                    <button
+                      className="action"
+                      title="Run this entry's scraper again now (deterministic, no LLM)"
+                      onClick={() => retry(run.entry_id)}
+                    >
+                      retry
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
