@@ -212,7 +212,7 @@ export default function OverviewPage() {
                   <th>entry</th>
                   <th>status</th>
                   <th>att</th>
-                  <th>last error</th>
+                  <th title="Why the Doctor's most recent attempt failed (task-level). Script execution failures show as a run's failure class instead">last error</th>
                   <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
                 </tr>
               </thead>

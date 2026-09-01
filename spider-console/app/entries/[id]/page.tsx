@@ -275,7 +275,7 @@ function EntryDetailView() {
                   <th>att</th>
                   <th>candidate</th>
                   <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
-                  <th>last error</th>
+                  <th title="Why the Doctor's most recent attempt failed (task-level). Script execution failures show as a run's failure class instead">last error</th>
                 </tr>
               </thead>
               <tbody>
@@ -290,8 +290,15 @@ function EntryDetailView() {
                     </td>
                     <td>{sha(task.candidate_sha)}</td>
                     <td>{ago(task.updated_at)}</td>
-                    <td className="err-cell" title={task.last_error ?? ""}>
-                      {task.last_error ?? "—"}
+                    <td
+                      className={`err-cell ${task.status === "succeeded" ? "muted" : ""}`}
+                      title={task.last_error ?? ""}
+                    >
+                      {task.last_error
+                        ? task.status === "succeeded"
+                          ? `earlier attempt: ${task.last_error}`
+                          : task.last_error
+                        : "—"}
                     </td>
                   </tr>
                 ))}
