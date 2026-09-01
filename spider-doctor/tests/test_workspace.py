@@ -89,7 +89,25 @@ def test_entry_id_uses_spider_scripts_safe_identifier_grammar(tmp_path: Path) ->
     assert manager.validate_changes(workspace, "Entry_1.2") == ["scrapers/Entry_1.2/scrape.py"]
 
 
-@pytest.mark.parametrize("entry_id", ["../escape", "/absolute", "bad/name", "-leading", "x" * 129])
+@pytest.mark.parametrize(
+    "entry_id",
+    ["8_bWr7 3tjEHrLq2WsIpWHw", "-6tlhQ5q6U9tq4xVLNAIkg", "_G66OOCKSeOjO2JWkr6aNA"],
+)
+def test_accepts_base64url_style_upstream_entry_ids(tmp_path: Path, entry_id: str) -> None:
+    source, release = origin(tmp_path)
+    manager = GitWorkspace(source, tmp_path / "work")
+    workspace = manager.prepare("task-1", release)
+    scraper = workspace / "scrapers" / entry_id
+    scraper.mkdir(parents=True)
+    (scraper / "scrape.py").write_text("pass\n")
+
+    assert manager.validate_changes(workspace, entry_id) == [f"scrapers/{entry_id}/scrape.py"]
+
+
+@pytest.mark.parametrize(
+    "entry_id",
+    ["../escape", "/absolute", "bad/name", ".hidden", " leading-space", "trailing-space ", "x" * 129],
+)
 def test_rejects_unsafe_entry_id(tmp_path: Path, entry_id: str) -> None:
     source, release = origin(tmp_path)
     manager = GitWorkspace(source, tmp_path / "work")

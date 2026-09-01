@@ -7,9 +7,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, StringConstraints
 
+# Upstream IDs are base64url-style and may start with "-"/"_" or contain inner
+# spaces. Forbidden: a leading dot (dotfiles, ".."), an edge space, "/" anywhere
+# - the ID becomes a single path segment under scrapers/ and tests/fixtures/.
 EntryId = Annotated[
     str,
-    Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"),
+    Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-](?:[A-Za-z0-9 ._-]*[A-Za-z0-9._-])?$"),
 ]
 BusinessName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
 BusinessAddress = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]

@@ -106,7 +106,7 @@ class GitWorkspace:
             raise ValueError("workspace was not prepared by this dispatcher")
         if self._run(workspace, "rev-parse", "HEAD") != expected_head:
             raise ValueError("workspace HEAD changed during Doctor execution")
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", entry_id):
+        if not re.fullmatch(r"[A-Za-z0-9_-](?:[A-Za-z0-9 ._-]{0,126}[A-Za-z0-9._-])?", entry_id):
             raise ValueError("unsafe entry_id")
         output = self._run_raw(workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all")
         changed: list[str] = []

@@ -26,7 +26,7 @@ def test_runner_executes_core_run_and_stores_output(tmp_path: Path) -> None:
     (scripts / "core").mkdir(parents=True)
     (scripts / "core" / "__init__.py").write_text("")
     (scripts / "core" / "run.py").write_text(
-        "import json, sys; assert sys.argv[1:] == ['--entry-id', 'example']; "
+        "import json, sys; assert sys.argv[1:] == ['--entry-id=example']; "
         "print(json.dumps({'entry_id':'example','website':'https://example.com','fields':{'NAME':{'value':'Example','source':'https://example.com'}},'errors':[]}))"
     )
     init_git(scripts)

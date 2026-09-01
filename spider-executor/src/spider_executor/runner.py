@@ -112,8 +112,9 @@ class SpiderRunner:
                             self.python_executable,
                             "-m",
                             "core.run",
-                            "--entry-id",
-                            entry_id,
+                            # single-token form: a separate value starting
+                            # with "-" can be misread as an option flag
+                            f"--entry-id={entry_id}",
                         ],
                         cwd=self.scripts_root,
                         stdout=stdout_handle,

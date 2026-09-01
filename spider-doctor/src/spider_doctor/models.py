@@ -31,7 +31,7 @@ class DoctorTask(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str = Field(alias="_id", pattern=r"^[A-Za-z0-9:._-]{1,255}$")
-    entry_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+    entry_id: str = Field(pattern=r"^[A-Za-z0-9_-](?:[A-Za-z0-9 ._-]{0,126}[A-Za-z0-9._-])?$")
     type: Literal["repair", "create"] = "repair"
     status: DoctorStatus = DoctorStatus.QUEUED
     priority: int = 50

@@ -18,6 +18,36 @@ def test_registration_service_rejects_unsafe_or_unbounded_identity() -> None:
         service.register("business-123", "x" * 257, "Bern")
 
 
+@pytest.mark.parametrize(
+    "entry_id",
+    [
+        "-6tlhQ5q6U9tq4xVLNAIkg",
+        "_G66OOCKSeOjO2JWkr6aNA",
+        "8_bWr7 3tjEHrLq2WsIpWHw",
+        "31lzOvK_ _8nVc1PQNGaxpA",
+    ],
+)
+def test_registration_accepts_base64url_style_upstream_ids(entry_id: str) -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+    service.ensure_indexes()
+
+    accepted = service.register(entry_id, "Example AG", "Bern")
+
+    assert accepted["entry_id"] == entry_id
+    assert service.db.entries.find_one({"_id": entry_id}) is not None
+
+
+@pytest.mark.parametrize(
+    "entry_id",
+    [".hidden", "..", " leading-space", "trailing-space ", "a" * 129, ""],
+)
+def test_registration_rejects_dot_leading_and_space_edged_ids(entry_id: str) -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+
+    with pytest.raises(ValidationError):
+        service.register(entry_id, "Example AG", "Bern")
+
+
 def test_register_upserts_entry_and_deduplicates_create_task() -> None:
     service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
     service.ensure_indexes()
