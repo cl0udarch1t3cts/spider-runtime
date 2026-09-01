@@ -6,11 +6,12 @@ import { Suspense, useEffect, useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { StatusBadge } from "@/components/status-badge";
 import { ago, isLive, sha, type DoctorTask } from "@/lib/types";
+import { replaceParam } from "@/lib/url-state";
 
 function TasksView() {
   const { data, error } = useOverview();
-  const initialStatus = useSearchParams().get("status");
-  const [status, setStatus] = useState<string | null>(initialStatus);
+  const status = useSearchParams().get("status");
+  const setStatus = (value: string | null) => replaceParam("status", value);
   const [tasks, setTasks] = useState<DoctorTask[] | null>(null);
   const [tasksError, setTasksError] = useState<string | null>(null);
 

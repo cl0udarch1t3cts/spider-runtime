@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { ago, sha, type EntryRow } from "@/lib/types";
+import { replaceParam } from "@/lib/url-state";
 
 type Filter = "all" | "active" | "inactive" | "no-scraper";
 
@@ -28,11 +29,18 @@ function matchesFilter(entry: EntryRow, filter: Filter): boolean {
   }
 }
 
-export default function EntriesPage() {
+function EntriesView() {
   const router = useRouter();
   const { data, error } = useOverview();
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const params = useSearchParams();
+  const query = params.get("q") ?? "";
+  const filterParam = params.get("filter") as Filter | null;
+  const filter: Filter = FILTERS.some((f) => f.key === filterParam)
+    ? (filterParam as Filter)
+    : "all";
+  const setQuery = (value: string) => replaceParam("q", value || null);
+  const setFilter = (value: Filter) =>
+    replaceParam("filter", value === "all" ? null : value);
   const [fetchNote, setFetchNote] = useState<string | null>(null);
 
   const entries = useMemo(() => data?.executor.entries ?? [], [data]);
@@ -166,5 +174,13 @@ export default function EntriesPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function EntriesPage() {
+  return (
+    <Suspense fallback={<p className="muted">loading…</p>}>
+      <EntriesView />
+    </Suspense>
   );
 }

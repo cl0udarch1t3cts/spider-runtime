@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { replaceParam } from "@/lib/url-state";
 import { useOverview } from "@/components/overview-provider";
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -13,16 +14,17 @@ import {
   type ScrapedRecord,
 } from "@/lib/types";
 
-export default function EntryDetailPage() {
+function EntryDetailView() {
   const params = useParams<{ id: string }>();
   // Entry IDs contain no "%", so decoding an already-decoded segment is safe.
   const entryId = decodeURIComponent(params.id);
+  // A pinned record lives in the URL so refresh and back/forward keep it.
+  const pinnedRecordId = useSearchParams().get("record");
+  const pinned = pinnedRecordId !== null;
 
   const { data } = useOverview();
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [runsError, setRunsError] = useState<string | null>(null);
-  const [recordId, setRecordId] = useState<string | null>(null);
-  const [pinned, setPinned] = useState(false);
   const [record, setRecord] = useState<ScrapedRecord | null>(null);
   const [fetchNote, setFetchNote] = useState<string | null>(null);
 
@@ -73,10 +75,7 @@ export default function EntryDetailPage() {
         ?.record_id ?? null,
     [runs],
   );
-
-  useEffect(() => {
-    if (!pinned && latestRecordId) setRecordId(latestRecordId);
-  }, [latestRecordId, pinned]);
+  const recordId = pinnedRecordId ?? latestRecordId;
 
   useEffect(() => {
     if (!recordId) {
@@ -171,7 +170,10 @@ export default function EntryDetailPage() {
         <h2>
           Scraped record{" "}
           {pinned ? (
-            <button className="link" onClick={() => setPinned(false)}>
+            <button
+              className="link"
+              onClick={() => replaceParam("record", null)}
+            >
               (follow latest)
             </button>
           ) : null}
@@ -240,10 +242,7 @@ export default function EntryDetailPage() {
                       {run.record_id ? (
                         <button
                           className="link"
-                          onClick={() => {
-                            setPinned(true);
-                            setRecordId(run.record_id);
-                          }}
+                          onClick={() => replaceParam("record", run.record_id)}
                         >
                           {run.record_id.slice(0, 12)}
                         </button>
@@ -302,5 +301,13 @@ export default function EntryDetailPage() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+export default function EntryDetailPage() {
+  return (
+    <Suspense fallback={<p className="muted">loading…</p>}>
+      <EntryDetailView />
+    </Suspense>
   );
 }
