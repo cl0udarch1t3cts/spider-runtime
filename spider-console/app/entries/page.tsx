@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
+import { Ago } from "@/components/ago";
 import { useOverview } from "@/components/overview-provider";
-import { ago, sha, type EntryRow } from "@/lib/types";
+import { sha, type EntryRow } from "@/lib/types";
 import { replaceParam } from "@/lib/url-state";
 
 type Filter = "all" | "active" | "inactive" | "no-scraper";
@@ -142,7 +143,7 @@ function EntriesView() {
                   </td>
                   <td>{entry.active ? "yes" : "no"}</td>
                   <td>{sha(entry.scraper_release)}</td>
-                  <td>{ago(entry.updated_at)}</td>
+                  <td><Ago iso={entry.updated_at} /></td>
                   <td>
                     <Link
                       className="action secondary"

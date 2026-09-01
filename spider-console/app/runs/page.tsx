@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useOverview } from "@/components/overview-provider";
+import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
-import { ago, sha, type Run } from "@/lib/types";
+import { sha, type Run } from "@/lib/types";
 import { replaceParam } from "@/lib/url-state";
 
 type Filter = "all" | "succeeded" | "failing";
@@ -128,7 +129,7 @@ function RunsView() {
                   </td>
                   <td>{run.failure_class ?? "—"}</td>
                   <td>{sha(run.scraper_release)}</td>
-                  <td>{ago(run.started_at)}</td>
+                  <td><Ago iso={run.started_at} /></td>
                 </tr>
               ))}
             </tbody>

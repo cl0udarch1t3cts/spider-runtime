@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useOverview } from "@/components/overview-provider";
-import { ago } from "@/lib/types";
+import { Ago } from "@/components/ago";
 
 const NAV = [
   { href: "/", label: "Overview" },
@@ -85,7 +85,13 @@ export function SiteHeader() {
           </button>
         ) : null}
         <span className="meta">
-          {data ? `refreshed ${ago(data.generatedAt)}` : "loading…"}
+          {data ? (
+            <>
+              refreshed <Ago iso={data.generatedAt} />
+            </>
+          ) : (
+            "loading…"
+          )}
           {error ? <span className="error"> — {error}</span> : null}
           {note ? <span className="error"> — {note}</span> : null}
         </span>

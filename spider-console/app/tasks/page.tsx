@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { useOverview } from "@/components/overview-provider";
+import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
-import { ago, isLive, sha, sortedStatusCounts, type DoctorTask } from "@/lib/types";
+import { isLive, sha, sortedStatusCounts, type DoctorTask } from "@/lib/types";
 import { replaceParam } from "@/lib/url-state";
 
 function TasksView() {
@@ -121,11 +122,11 @@ function TasksView() {
                   </td>
                   <td>
                     {task.lease
-                      ? `${task.lease.worker_id} → ${ago(task.lease.expires_at)}`
+                      ? `${task.lease.worker_id} → $<Ago iso={task.lease.expires_at} />`
                       : "—"}
                   </td>
                   <td>{sha(task.candidate_sha)}</td>
-                  <td>{ago(task.updated_at)}</td>
+                  <td><Ago iso={task.updated_at} /></td>
                   <td
                     className={`err-cell ${task.status === "succeeded" ? "muted" : ""}`}
                     title={

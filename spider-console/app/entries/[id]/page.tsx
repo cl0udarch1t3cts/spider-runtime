@@ -5,9 +5,9 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { replaceParam } from "@/lib/url-state";
 import { useOverview } from "@/components/overview-provider";
+import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
 import {
-  ago,
   fieldText,
   sha,
   type Run,
@@ -147,7 +147,7 @@ function EntryDetailView() {
               )}{" "}
               · id <span title={entryId}>{entryId}</span> ·{" "}
               {entry?.active ? "active" : "inactive"} · release{" "}
-              {sha(entry?.scraper_release)} · updated {ago(entry?.updated_at)}
+              {sha(entry?.scraper_release)} · updated <Ago iso={entry?.updated_at} />
             </p>
           </div>
           <button
@@ -181,7 +181,7 @@ function EntryDetailView() {
         {record?.fields ? (
           <>
             <p className="muted">
-              fetched {ago(record.fetched_at ?? null)} · record{" "}
+              fetched <Ago iso={record.fetched_at ?? null} /> · record{" "}
               {recordId?.slice(0, 12)}
             </p>
             <table>
@@ -250,7 +250,7 @@ function EntryDetailView() {
                         "—"
                       )}
                     </td>
-                    <td>{ago(run.started_at)}</td>
+                    <td><Ago iso={run.started_at} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -289,7 +289,7 @@ function EntryDetailView() {
                       {task.attempts}/{task.max_attempts}
                     </td>
                     <td>{sha(task.candidate_sha)}</td>
-                    <td>{ago(task.updated_at)}</td>
+                    <td><Ago iso={task.updated_at} /></td>
                     <td
                       className={`err-cell ${task.status === "succeeded" ? "muted" : ""}`}
                       title={task.last_error ?? ""}

@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useOverview } from "@/components/overview-provider";
+import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
-import { ago, duration, isLive, sha, sortedStatusCounts } from "@/lib/types";
+import { duration, isLive, sha, sortedStatusCounts } from "@/lib/types";
 
 function BudgetEditor({
   dailyPercent,
@@ -277,10 +278,10 @@ export default function OverviewPage() {
                     </td>
                     <td>
                       {task.lease
-                        ? `${task.lease.worker_id} → ${ago(task.lease.expires_at)}`
+                        ? `${task.lease.worker_id} → $<Ago iso={task.lease.expires_at} />`
                         : "—"}
                     </td>
-                    <td>{ago(task.updated_at)}</td>
+                    <td><Ago iso={task.updated_at} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -325,7 +326,7 @@ export default function OverviewPage() {
                   </td>
                   <td>{run.failure_class ?? "—"}</td>
                   <td>{sha(run.scraper_release)}</td>
-                  <td>{ago(run.started_at)}</td>
+                  <td><Ago iso={run.started_at} /></td>
                 </tr>
               ))}
             </tbody>
@@ -371,7 +372,7 @@ export default function OverviewPage() {
                     <td className="err-cell" title={task.last_error ?? ""}>
                       {task.last_error}
                     </td>
-                    <td>{ago(task.updated_at)}</td>
+                    <td><Ago iso={task.updated_at} /></td>
                   </tr>
                 ))}
               </tbody>
