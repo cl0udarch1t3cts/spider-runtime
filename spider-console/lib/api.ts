@@ -45,6 +45,12 @@ export async function fetchRecord(recordId: string) {
   );
 }
 
+export async function fetchEntryRuns(entryId: string) {
+  return executorGet<Record<string, unknown>[]>(
+    `/api/v1/entries/${encodeURIComponent(entryId)}/runs`,
+  );
+}
+
 export async function fetchLatestRecordId(
   entryId: string,
 ): Promise<string | null> {

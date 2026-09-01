@@ -76,6 +76,34 @@ h2 {
   gap: 1rem;
 }
 
+.nav {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.nav-link {
+  color: var(--muted);
+  text-decoration: none;
+  font-family: var(--font-brand), sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+}
+
+.nav-link:hover {
+  color: var(--text);
+  background: rgba(91, 77, 229, 0.15);
+}
+
+.nav-link.active {
+  color: #fff;
+  background: var(--brand);
+}
+
 button.action.pause {
   background: transparent;
   border: 1px solid var(--brand);
@@ -298,8 +326,117 @@ button.action.secondary:hover {
   overflow-y: auto;
 }
 
-.scroll.entries {
-  max-height: 380px;
+.scroll.entries,
+.scroll.tall {
+  max-height: calc(100vh - 220px);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.search {
+  flex: 1 1 240px;
+  max-width: 380px;
+  background: #0a0e14;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  padding: 0.35rem 0.7rem;
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+
+.chips {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 0.15rem 0.75rem;
+}
+
+.chip:hover {
+  border-color: var(--brand);
+  color: var(--text);
+}
+
+.chip.active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.chip-count {
+  opacity: 0.75;
+  font-weight: 700;
+}
+
+.breadcrumb {
+  margin-bottom: 0.5rem;
+  font-size: 12px;
+}
+
+.entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.entry-title {
+  font-size: 1rem;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin-bottom: 0.15rem;
+}
+
+h2 .more {
+  float: right;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  text-transform: none;
+}
+
+h2 .more:hover {
+  color: var(--brand-light);
+}
+
+a.count {
+  text-decoration: none;
+}
+
+a.count:hover .label {
+  color: var(--brand-light);
+}
+
+a.action {
+  display: inline-block;
+  text-decoration: none;
+}
+
+a.link {
+  color: var(--brand-light);
 }
 
 .scroll thead th {

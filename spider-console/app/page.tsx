@@ -1,262 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useOverview } from "@/components/overview-provider";
+import { StatusBadge } from "@/components/status-badge";
+import { ago, duration, isLive, sha } from "@/lib/types";
 
-interface Lease {
-  worker_id: string | null;
-  expires_at: string | null;
-}
-
-interface DoctorTask {
-  id: string;
-  entry_id: string | null;
-  type: string | null;
-  status: string | null;
-  attempts: number;
-  max_attempts: number;
-  failure_class: string | null;
-  last_error: string | null;
-  candidate_sha: string | null;
-  updated_at: string | null;
-  lease: Lease | null;
-}
-
-interface Run {
-  id: string;
-  entry_id: string;
-  status: string;
-  failure_class: string | null;
-  record_id: string | null;
-  scraper_release: string | null;
-  started_at: string;
-  finished_at: string | null;
-}
-
-interface EntryRow {
-  id: string;
-  businessname: string | null;
-  website: string | null;
-  active: boolean;
-  scraper_release: string | null;
-  updated_at: string | null;
-}
-
-interface Overview {
-  generatedAt: string;
-  executor: {
-    error?: string;
-    stats?: {
-      entries: number;
-      records: number;
-      doctor_tasks: Record<string, number>;
-      execution_jobs: Record<string, number>;
-      execution_runs: Record<string, number>;
-      doctor_paused?: boolean;
-    };
-    tasks?: DoctorTask[];
-    runs?: Run[];
-    entries?: EntryRow[];
-  };
-  usage: {
-    error?: string;
-    source?: string;
-    budget?: {
-      usedPercent: number;
-      allowedPercent: number;
-      day: number | null;
-      totalDays: number | null;
-      resetsInSeconds: number | null;
-      dailyPercent: number;
-      reservePercent: number;
-      decision: string;
-    } | null;
-  } | null;
-}
-
-function ago(iso: string | null): string {
-  if (!iso) return "—";
-  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 90) return `${Math.round(seconds)}s ago`;
-  if (seconds < 5400) return `${Math.round(seconds / 60)}m ago`;
-  if (seconds < 129_600) return `${Math.round(seconds / 3600)}h ago`;
-  return `${Math.round(seconds / 86_400)}d ago`;
-}
-
-function duration(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const days = Math.floor(seconds / 86_400);
-  const hours = Math.floor((seconds % 86_400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return days ? `${days}d${hours}h` : `${hours}h${minutes}m`;
-}
-
-function sha(value: string | null): string {
-  return value ? value.slice(0, 10) : "—";
-}
-
-function isLive(task: DoctorTask): boolean {
-  return (
-    task.status === "running" &&
-    !!task.lease?.expires_at &&
-    new Date(task.lease.expires_at).getTime() > Date.now()
-  );
-}
-
-function StatusBadge({ value }: { value: string | null }) {
-  return <span className={`status ${value ?? ""}`}>{value ?? "—"}</span>;
-}
-
-interface RecordField {
-  value: unknown;
-  source: string | null;
-}
-
-interface ScrapedRecord {
-  slug?: string;
-  website?: string;
-  fetched_at?: string;
-  fields?: Record<string, RecordField>;
-  errors?: string[];
-  error?: string;
-}
-
-function fieldText(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "string") return value;
-  return JSON.stringify(value, null, 1);
-}
-
-export default function Dashboard() {
-  const [data, setData] = useState<Overview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [recordId, setRecordId] = useState<string | null>(null);
-  const [record, setRecord] = useState<ScrapedRecord | null>(null);
-  const [pinnedRecord, setPinnedRecord] = useState(false);
-  const [fetchNote, setFetchNote] = useState<string | null>(null);
-
-  const togglePause = async (paused: boolean) => {
-    try {
-      const response = await fetch("/api/doctor-control", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paused }),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        setFetchNote(`pause toggle failed: ${String(body?.error ?? response.status)}`);
-        return;
-      }
-      // Reflect immediately; the next poll confirms.
-      setData((current) =>
-        current?.executor.stats
-          ? {
-              ...current,
-              executor: {
-                ...current.executor,
-                stats: { ...current.executor.stats, doctor_paused: paused },
-              },
-            }
-          : current,
-      );
-    } catch (exc) {
-      setFetchNote(`pause toggle failed: ${String(exc)}`);
-    }
-  };
-
-  const showData = async (entryId: string) => {
-    try {
-      const response = await fetch(
-        `/api/entry-record/${encodeURIComponent(entryId)}`,
-      );
-      const body = (await response.json()) as {
-        recordId?: string | null;
-        error?: string;
-      };
-      if (body.recordId) {
-        setPinnedRecord(true);
-        setRecordId(body.recordId);
-        setFetchNote(null);
-      } else {
-        setFetchNote(
-          body.error ?? `${entryId}: no scraped record yet — fetch it first`,
-        );
-      }
-    } catch (exc) {
-      setFetchNote(`${entryId}: ${String(exc)}`);
-    }
-  };
-
-  const triggerFetch = async (entryId: string) => {
-    setFetchNote(`enqueueing ${entryId}…`);
-    try {
-      const response = await fetch("/api/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entryId }),
-      });
-      const body = await response.json().catch(() => null);
-      if (response.ok) {
-        setFetchNote(
-          `job ${String(body?.id ?? "").slice(0, 12)} queued for ${entryId} — a fresh run appears below once the worker picks it up`,
-        );
-      } else {
-        setFetchNote(
-          `${entryId}: ${String(body?.detail ?? body?.error ?? `HTTP ${response.status}`)}`,
-        );
-      }
-    } catch (exc) {
-      setFetchNote(`${entryId}: ${String(exc)}`);
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const response = await fetch("/api/overview", { cache: "no-store" });
-        if (!response.ok) throw new Error(`overview returned ${response.status}`);
-        const payload = (await response.json()) as Overview;
-        if (!cancelled) {
-          setData(payload);
-          setError(null);
-        }
-      } catch (exc) {
-        if (!cancelled) setError(String(exc));
-      }
-    };
-    load();
-    const timer = setInterval(load, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
-
-  const runs = data?.executor.runs ?? [];
-  const latestRecordId =
-    runs.find((run) => run.status === "succeeded" && run.record_id)
-      ?.record_id ?? null;
-
-  // Follow the newest record unless the user pinned one from the runs table.
-  useEffect(() => {
-    if (!pinnedRecord && latestRecordId) setRecordId(latestRecordId);
-  }, [latestRecordId, pinnedRecord]);
-
-  useEffect(() => {
-    if (!recordId) return;
-    let cancelled = false;
-    fetch(`/api/record/${encodeURIComponent(recordId)}`)
-      .then(async (response) => (await response.json()) as ScrapedRecord)
-      .then((payload) => {
-        if (!cancelled) setRecord(payload);
-      })
-      .catch((exc) => {
-        if (!cancelled) setRecord({ error: String(exc) });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [recordId]);
+export default function OverviewPage() {
+  const { data, error } = useOverview();
 
   if (!data) {
     return <p className="muted">loading{error ? ` — ${error}` : "…"}</p>;
@@ -265,308 +15,239 @@ export default function Dashboard() {
   const { executor, usage } = data;
   const stats = executor.stats;
   const tasks = executor.tasks ?? [];
-  const entries = executor.entries ?? [];
+  const runs = executor.runs ?? [];
   const budget = usage && !usage.error ? usage.budget : null;
   const live = tasks.filter(isLive);
+  const problems = tasks
+    .filter(
+      (task) =>
+        task.last_error &&
+        task.status !== "succeeded" &&
+        !isLive(task),
+    )
+    .slice(0, 8);
+  const recentRuns = runs.slice(0, 10);
 
   return (
-    <main>
-      <div className="header">
-        <div className="brand">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.svg" alt="Cloud Architects" width={30} height={30} />
-          <div>
-            <h1>SPIDER CONSOLE</h1>
-            <span className="tagline">
-              Cloud Architects
-            </span>
-          </div>
-        </div>
-        <div className="header-right">
-          {stats ? (
-            <button
-              className={`action pause ${stats.doctor_paused ? "paused" : ""}`}
-              title={
-                stats.doctor_paused
-                  ? "LLM calls are paused: the Doctor claims no tasks. Click to resume."
-                  : "Pause all LLM calls: the Doctor stops claiming tasks (in-flight runs finish)."
-              }
-              onClick={() => togglePause(!stats.doctor_paused)}
-            >
-              {stats.doctor_paused ? "▶ resume LLM" : "⏸ pause LLM"}
-            </button>
-          ) : null}
-          <span className="meta">
-            refreshed {ago(data.generatedAt)}
-            {error ? <span className="error"> — {error}</span> : null}
-          </span>
-        </div>
-      </div>
-
-      <div className="grid">
-        <section className="panel">
-          <h2>Subscription budget</h2>
-          {budget ? (
-            <>
-              <div className="bar">
-                <div
-                  className={`fill ${
-                    budget.usedPercent >= budget.allowedPercent
-                      ? "over"
-                      : budget.usedPercent >= budget.allowedPercent - 10
-                        ? "warn"
-                        : ""
-                  }`}
-                  style={{ width: `${Math.min(100, budget.usedPercent)}%` }}
-                />
-                <div
-                  className="limit"
-                  style={{ left: `${Math.min(100, budget.allowedPercent)}%` }}
-                />
-                <div className="text">
-                  {budget.usedPercent.toFixed(1)}% used /{" "}
-                  {budget.allowedPercent.toFixed(0)}% allowed
-                </div>
+    <div className="grid">
+      <section className="panel">
+        <h2>Subscription budget</h2>
+        {budget ? (
+          <>
+            <div className="bar">
+              <div
+                className={`fill ${
+                  budget.usedPercent >= budget.allowedPercent
+                    ? "over"
+                    : budget.usedPercent >= budget.allowedPercent - 10
+                      ? "warn"
+                      : ""
+                }`}
+                style={{ width: `${Math.min(100, budget.usedPercent)}%` }}
+              />
+              <div
+                className="limit"
+                style={{ left: `${Math.min(100, budget.allowedPercent)}%` }}
+              />
+              <div className="text">
+                {budget.usedPercent.toFixed(1)}% used /{" "}
+                {budget.allowedPercent.toFixed(0)}% allowed
               </div>
-              <p className="muted">
-                decision: <StatusBadge value={budget.decision === "proceed" ? "succeeded" : "failed"} />{" "}
-                {budget.decision}
-                {budget.day !== null
-                  ? ` · day ${budget.day}/${budget.totalDays}`
-                  : ""}{" "}
-                · resets in {duration(budget.resetsInSeconds)} · daily{" "}
-                {budget.dailyPercent}% · reserve {budget.reservePercent}%
-              </p>
-            </>
-          ) : (
-            <p className="error">
-              usage unavailable{usage?.error ? ` — ${usage.error}` : ""}
-            </p>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2>Totals</h2>
-          {executor.error ? (
-            <p className="error">{executor.error}</p>
-          ) : stats ? (
-            <div className="counts">
-              <div className="count">
-                <div className="value">{live.length}</div>
-                <div className="label">live tasks</div>
-              </div>
-              <div className="count">
-                <div className="value">{stats.entries}</div>
-                <div className="label">entries</div>
-              </div>
-              <div className="count">
-                <div className="value">{stats.records}</div>
-                <div className="label">records</div>
-              </div>
-              {Object.entries(stats.doctor_tasks).map(([status, count]) => (
-                <div className="count" key={status}>
-                  <div className="value">{count}</div>
-                  <div className="label">tasks {status}</div>
-                </div>
-              ))}
             </div>
-          ) : null}
-        </section>
+            <p className="muted">
+              decision:{" "}
+              <StatusBadge
+                value={budget.decision === "proceed" ? "succeeded" : "failed"}
+              />{" "}
+              {budget.decision}
+              {budget.day !== null
+                ? ` · day ${budget.day}/${budget.totalDays}`
+                : ""}{" "}
+              · resets in {duration(budget.resetsInSeconds)} · daily{" "}
+              {budget.dailyPercent}% · reserve {budget.reservePercent}%
+            </p>
+          </>
+        ) : (
+          <p className="error">
+            usage unavailable{usage?.error ? ` — ${usage.error}` : ""}
+          </p>
+        )}
+      </section>
 
-        <section className="panel wide">
-          <h2>Doctor tasks</h2>
-          <div className="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>entry</th>
-                <th>type</th>
-                <th>status</th>
-                <th>att</th>
-                <th>worker / lease</th>
-                <th>candidate</th>
-                <th>updated</th>
-                <th>last error</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.map((task) => (
-                <tr key={task.id}>
-                  <td title={task.id}>{task.entry_id ?? "—"}</td>
-                  <td>{task.type}</td>
-                  <td>
-                    <StatusBadge value={task.status} />
-                    {isLive(task) ? " ●" : ""}
-                  </td>
-                  <td>
-                    {task.attempts}/{task.max_attempts}
-                  </td>
-                  <td>
-                    {task.lease
-                      ? `${task.lease.worker_id} → ${ago(task.lease.expires_at)}`
-                      : "—"}
-                  </td>
-                  <td>{sha(task.candidate_sha)}</td>
-                  <td>{ago(task.updated_at)}</td>
-                  <td className="err-cell" title={task.last_error ?? ""}>
-                    {task.last_error ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <section className="panel">
+        <h2>Totals</h2>
+        {executor.error ? (
+          <p className="error">{executor.error}</p>
+        ) : stats ? (
+          <div className="counts">
+            <div className="count">
+              <div className="value">{live.length}</div>
+              <div className="label">live tasks</div>
+            </div>
+            <Link className="count" href="/entries">
+              <div className="value">{stats.entries}</div>
+              <div className="label">entries</div>
+            </Link>
+            <div className="count">
+              <div className="value">{stats.records}</div>
+              <div className="label">records</div>
+            </div>
+            {Object.entries(stats.doctor_tasks).map(([status, count]) => (
+              <Link
+                className="count"
+                key={status}
+                href={`/tasks?status=${encodeURIComponent(status)}`}
+              >
+                <div className="value">{count}</div>
+                <div className="label">tasks {status}</div>
+              </Link>
+            ))}
           </div>
-        </section>
+        ) : null}
+      </section>
 
-        <section className="panel wide">
-          <h2>Execution runs</h2>
+      <section className="panel wide">
+        <h2>
+          Live now{" "}
+          <Link className="more" href="/tasks">
+            all tasks →
+          </Link>
+        </h2>
+        {live.length ? (
           <div className="scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>entry</th>
+                  <th>type</th>
+                  <th>att</th>
+                  <th>worker / lease</th>
+                  <th>updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {live.map((task) => (
+                  <tr key={task.id}>
+                    <td title={task.id}>
+                      {task.entry_id ? (
+                        <Link
+                          className="link"
+                          href={`/entries/${encodeURIComponent(task.entry_id)}`}
+                        >
+                          {task.entry_id}
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td>{task.type}</td>
+                    <td>
+                      {task.attempts}/{task.max_attempts}
+                    </td>
+                    <td>
+                      {task.lease
+                        ? `${task.lease.worker_id} → ${ago(task.lease.expires_at)}`
+                        : "—"}
+                    </td>
+                    <td>{ago(task.updated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">no Doctor task is running right now</p>
+        )}
+      </section>
+
+      <section className="panel wide">
+        <h2>
+          Recent runs{" "}
+          <Link className="more" href="/runs">
+            all runs →
+          </Link>
+        </h2>
+        <div className="scroll">
           <table>
             <thead>
               <tr>
-                <th>run</th>
                 <th>entry</th>
                 <th>status</th>
                 <th>failure</th>
                 <th>release</th>
-                <th>record</th>
                 <th>started</th>
               </tr>
             </thead>
             <tbody>
-              {runs.map((run) => (
+              {recentRuns.map((run) => (
                 <tr key={run.id}>
-                  <td>{run.id.slice(0, 12)}</td>
-                  <td>{run.entry_id}</td>
+                  <td>
+                    <Link
+                      className="link"
+                      href={`/entries/${encodeURIComponent(run.entry_id)}`}
+                    >
+                      {run.entry_id}
+                    </Link>
+                  </td>
                   <td>
                     <StatusBadge value={run.status} />
                   </td>
                   <td>{run.failure_class ?? "—"}</td>
                   <td>{sha(run.scraper_release)}</td>
-                  <td>
-                    {run.record_id ? (
-                      <button
-                        className="link"
-                        onClick={() => {
-                          setPinnedRecord(true);
-                          setRecordId(run.record_id);
-                        }}
-                      >
-                        {run.record_id.slice(0, 12)}
-                      </button>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
                   <td>{ago(run.started_at)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          </div>
-        </section>
+        </div>
+      </section>
 
+      {problems.length ? (
         <section className="panel wide">
-          <h2>Entries</h2>
-          {fetchNote ? <p className="note">{fetchNote}</p> : null}
-          <div className="scroll entries">
-          <table>
-            <thead>
-              <tr>
-                <th>entry</th>
-                <th>business</th>
-                <th>website</th>
-                <th>active</th>
-                <th>release</th>
-                <th>updated</th>
-                <th>actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr
-                  key={entry.id}
-                  className="clickable"
-                  title="Show this entry's latest scraped record"
-                  onClick={() => showData(entry.id)}
-                >
-                  <td>{entry.id}</td>
-                  <td>{entry.businessname ?? "—"}</td>
-                  <td>{entry.website ?? "—"}</td>
-                  <td>{entry.active ? "yes" : "no"}</td>
-                  <td>{sha(entry.scraper_release)}</td>
-                  <td>{ago(entry.updated_at)}</td>
-                  <td>
-                    <button
-                      className="action"
-                      disabled={!entry.scraper_release}
-                      title={
-                        entry.scraper_release
-                          ? "Run the spider script now and fetch the latest data"
-                          : "no activated scraper release yet (Doctor has not published a scraper)"
-                      }
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        triggerFetch(entry.id);
-                      }}
-                    >
-                      fetch
-                    </button>
-                  </td>
+          <h2>Needs attention</h2>
+          <div className="scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>entry</th>
+                  <th>status</th>
+                  <th>att</th>
+                  <th>last error</th>
+                  <th>updated</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {problems.map((task) => (
+                  <tr key={task.id}>
+                    <td title={task.id}>
+                      {task.entry_id ? (
+                        <Link
+                          className="link"
+                          href={`/entries/${encodeURIComponent(task.entry_id)}`}
+                        >
+                          {task.entry_id}
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td>
+                      <StatusBadge value={task.status} />
+                    </td>
+                    <td>
+                      {task.attempts}/{task.max_attempts}
+                    </td>
+                    <td className="err-cell" title={task.last_error ?? ""}>
+                      {task.last_error}
+                    </td>
+                    <td>{ago(task.updated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
-        <section className="panel wide">
-          <h2>
-            Latest record{" "}
-            {record?.slug ? <span className="muted">· {record.slug}</span> : null}
-            {pinnedRecord ? (
-              <button
-                className="link"
-                onClick={() => {
-                  setPinnedRecord(false);
-                }}
-              >
-                (follow latest)
-              </button>
-            ) : null}
-          </h2>
-          {record?.fields ? (
-            <>
-              <p className="muted">
-                {record.website ?? ""} · fetched {ago(record.fetched_at ?? null)}{" "}
-                · run {recordId?.slice(0, 12)}
-              </p>
-              <table>
-                <thead>
-                  <tr>
-                    <th>field</th>
-                    <th>value</th>
-                    <th>source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(record.fields).map(([name, field]) => (
-                    <tr key={name}>
-                      <td>{name}</td>
-                      <td className="value-cell">{fieldText(field.value)}</td>
-                      <td className="muted">{field.source ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          ) : record?.error ? (
-            <p className="error">{record.error}</p>
-          ) : (
-            <p className="muted">no scraped record yet</p>
-          )}
-        </section>
-
-      </div>
-    </main>
+      ) : null}
+    </div>
   );
 }

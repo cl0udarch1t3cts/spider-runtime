@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Radio_Canada_Big } from "next/font/google";
 import "./globals.css";
+import { OverviewProvider } from "@/components/overview-provider";
+import { SiteHeader } from "@/components/site-header";
 
 const brandFont = Radio_Canada_Big({
   subsets: ["latin"],
@@ -20,7 +22,12 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={brandFont.variable}>
-      <body>{children}</body>
+      <body>
+        <OverviewProvider>
+          <SiteHeader />
+          <main>{children}</main>
+        </OverviewProvider>
+      </body>
     </html>
   );
 }
