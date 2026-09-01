@@ -8,14 +8,13 @@ export function Ago({ iso }: { iso: string | null | undefined }) {
   const date = parseUtc(iso);
   return (
     <span
-      title={`${date.toLocaleString(undefined, {
-        year: "numeric",
+      title={date.toLocaleString(undefined, {
         month: "2-digit",
         day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
-      })} · ${date.toISOString()}`}
+      })}
     >
       {ago(iso)}
     </span>
