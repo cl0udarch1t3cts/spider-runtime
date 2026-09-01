@@ -112,6 +112,30 @@ export function isLive(task: DoctorTask): boolean {
   );
 }
 
+// Mongo's $group emits statuses in arbitrary, changing order; pin the
+// lifecycle order so chips and counters don't reshuffle on every poll.
+const STATUS_ORDER = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "exhausted",
+  "human_review_required",
+];
+
+export function sortedStatusCounts(
+  counts: Record<string, number>,
+): [string, number][] {
+  return Object.entries(counts).sort(([a], [b]) => {
+    const ia = STATUS_ORDER.indexOf(a);
+    const ib = STATUS_ORDER.indexOf(b);
+    if (ia !== -1 || ib !== -1) {
+      return (ia === -1 ? STATUS_ORDER.length : ia) - (ib === -1 ? STATUS_ORDER.length : ib);
+    }
+    return a.localeCompare(b);
+  });
+}
+
 export function fieldText(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value;

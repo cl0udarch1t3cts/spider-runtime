@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useOverview } from "@/components/overview-provider";
 import { StatusBadge } from "@/components/status-badge";
-import { ago, duration, isLive, sha } from "@/lib/types";
+import { ago, duration, isLive, sha, sortedStatusCounts } from "@/lib/types";
 
 export default function OverviewPage() {
   const { data, error } = useOverview();
@@ -92,7 +92,7 @@ export default function OverviewPage() {
               <div className="value">{stats.records}</div>
               <div className="label">records</div>
             </div>
-            {Object.entries(stats.doctor_tasks).map(([status, count]) => (
+            {sortedStatusCounts(stats.doctor_tasks).map(([status, count]) => (
               <Link
                 className="count"
                 key={status}

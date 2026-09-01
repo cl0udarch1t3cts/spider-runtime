@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { StatusBadge } from "@/components/status-badge";
-import { ago, isLive, sha, type DoctorTask } from "@/lib/types";
+import { ago, isLive, sha, sortedStatusCounts, type DoctorTask } from "@/lib/types";
 import { replaceParam } from "@/lib/url-state";
 
 function TasksView() {
@@ -65,7 +65,7 @@ function TasksView() {
             >
               all
             </button>
-            {Object.entries(counts).map(([name, count]) => (
+            {sortedStatusCounts(counts).map(([name, count]) => (
               <button
                 key={name}
                 className={`chip ${status === name ? "active" : ""}`}
