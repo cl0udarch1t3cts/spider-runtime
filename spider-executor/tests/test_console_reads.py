@@ -143,6 +143,34 @@ def test_service_lists_doctor_tasks_newest_first_without_lease_token() -> None:
     assert running["last_error"] == "previous attempt failed"
 
 
+def test_service_lists_only_unresolved_run_failures() -> None:
+    db = mongomock.MongoClient().spider
+    service = MongoControlService(db)
+    now = datetime.now(UTC)
+    db.execution_runs.insert_many(
+        [
+            # fixed later: failed run followed by a success for the same entry
+            {"_id": "a:1", "entry_id": "entry-fixed", "status": "failed",
+             "failure_class": "SCRAPER_EXCEPTION", "started_at": now - timedelta(hours=2)},
+            {"_id": "a:2", "entry_id": "entry-fixed", "status": "succeeded",
+             "started_at": now - timedelta(hours=1)},
+            # still failing: latest run for the entry failed
+            {"_id": "b:1", "entry_id": "entry-broken", "status": "succeeded",
+             "started_at": now - timedelta(hours=2)},
+            {"_id": "b:2", "entry_id": "entry-broken", "status": "failed",
+             "failure_class": "NETWORK_TIMEOUT", "started_at": now - timedelta(minutes=30)},
+            # healthy entry
+            {"_id": "c:1", "entry_id": "entry-ok", "status": "succeeded",
+             "started_at": now - timedelta(minutes=10)},
+        ]
+    )
+
+    unresolved = service.list_recent_runs(limit=50, unresolved=True)
+
+    assert [run["id"] for run in unresolved] == ["b:2"]
+    assert unresolved[0]["entry_id"] == "entry-broken"
+
+
 def test_service_filters_doctor_tasks_by_status() -> None:
     service = seeded_service()
 
@@ -170,6 +198,7 @@ class ConsoleFakeControl:
         self.now = datetime.now(UTC)
         self.requested_limits: list[int] = []
         self.requested_statuses: list[str | None] = []
+        self.requested_unresolved: list[bool] = []
 
     def ready(self) -> bool:
         return True
@@ -187,8 +216,9 @@ class ConsoleFakeControl:
             }
         ]
 
-    def list_recent_runs(self, limit: int):
+    def list_recent_runs(self, limit: int, unresolved: bool = False):
         self.requested_limits.append(limit)
+        self.requested_unresolved.append(unresolved)
         return [
             {
                 "id": "job-0:1",
@@ -238,6 +268,7 @@ def test_api_exposes_console_read_endpoints() -> None:
 
     entries = client.get("/api/v1/entries")
     runs = client.get("/api/v1/runs?limit=5")
+    unresolved = client.get("/api/v1/runs?limit=5&unresolved=true")
     tasks = client.get("/api/v1/doctor-tasks?limit=7")
     filtered = client.get("/api/v1/doctor-tasks?limit=7&status=queued")
     stats = client.get("/api/v1/stats")
@@ -246,12 +277,14 @@ def test_api_exposes_console_read_endpoints() -> None:
     assert entries.json()[0]["id"] == "entry-0"
     assert runs.status_code == 200
     assert runs.json()[0]["id"] == "job-0:1"
+    assert unresolved.status_code == 200
+    assert control.requested_unresolved == [False, True]
     assert tasks.status_code == 200
     assert tasks.json()[0]["id"] == "task-running"
     assert filtered.status_code == 200
     assert stats.status_code == 200
     assert stats.json()["doctor_tasks"] == {"running": 1}
-    assert control.requested_limits == [5, 7, 7]
+    assert control.requested_limits == [5, 5, 7, 7]
     assert control.requested_statuses == [None, "queued"]
 
 

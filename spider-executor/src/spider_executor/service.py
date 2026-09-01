@@ -580,7 +580,25 @@ class MongoControlService:
             for document in self.db.entries.find().sort("updated_at", DESCENDING)
         ]
 
-    def list_recent_runs(self, limit: int = 50) -> list[dict]:
+    def list_recent_runs(self, limit: int = 50, unresolved: bool = False) -> list[dict]:
+        if unresolved:
+            # Latest run per entry, kept only while that latest run is not a
+            # success: a failure a later run already fixed is history.
+            grouped = self.db.execution_runs.aggregate(
+                [
+                    {"$match": {"entry_id": {"$type": "string"}}},
+                    {"$sort": {"started_at": DESCENDING}},
+                    {"$group": {"_id": "$entry_id", "doc": {"$first": "$$ROOT"}}},
+                    {"$match": {"doc.status": {"$ne": "succeeded"}}},
+                    {"$sort": {"doc.started_at": DESCENDING}},
+                    {"$limit": limit},
+                ]
+            )
+            documents = [item["doc"] for item in grouped]
+        else:
+            documents = (
+                self.db.execution_runs.find().sort("started_at", DESCENDING).limit(limit)
+            )
         # View dicts, not ExecutionRun models: legacy run documents (e.g.
         # missing entry_id) must still be listable.
         return [
@@ -596,9 +614,7 @@ class MongoControlService:
                 "started_at": document.get("started_at"),
                 "finished_at": document.get("finished_at"),
             }
-            for document in self.db.execution_runs.find()
-            .sort("started_at", DESCENDING)
-            .limit(limit)
+            for document in documents
         ]
 
     def list_doctor_tasks(self, limit: int = 50, status: str | None = None) -> list[dict]:

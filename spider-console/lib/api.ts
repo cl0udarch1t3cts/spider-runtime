@@ -45,6 +45,12 @@ export async function fetchRecord(recordId: string) {
   );
 }
 
+export async function fetchUnresolvedRuns() {
+  return executorGet<Record<string, unknown>[]>(
+    "/api/v1/runs?limit=200&unresolved=true",
+  );
+}
+
 export async function fetchDoctorTasks(status: string | null) {
   const filter = status ? `&status=${encodeURIComponent(status)}` : "";
   return executorGet<Record<string, unknown>[]>(
