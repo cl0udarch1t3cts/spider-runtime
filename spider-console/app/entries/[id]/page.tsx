@@ -12,6 +12,7 @@ import {
   sha,
   type Run,
   type ScrapedRecord,
+  runDuration,
 } from "@/lib/types";
 
 function EntryDetailView() {
