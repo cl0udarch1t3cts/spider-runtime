@@ -143,6 +143,16 @@ def test_service_lists_doctor_tasks_newest_first_without_lease_token() -> None:
     assert running["last_error"] == "previous attempt failed"
 
 
+def test_service_filters_doctor_tasks_by_status() -> None:
+    service = seeded_service()
+
+    succeeded = service.list_doctor_tasks(limit=10, status="succeeded")
+    running = service.list_doctor_tasks(limit=10, status="running")
+
+    assert [task["id"] for task in succeeded] == ["task-old"]
+    assert [task["id"] for task in running] == ["task-running"]
+
+
 def test_service_stats_counts_by_status() -> None:
     service = seeded_service()
 
@@ -159,6 +169,7 @@ class ConsoleFakeControl:
     def __init__(self) -> None:
         self.now = datetime.now(UTC)
         self.requested_limits: list[int] = []
+        self.requested_statuses: list[str | None] = []
 
     def ready(self) -> bool:
         return True
@@ -193,8 +204,9 @@ class ConsoleFakeControl:
             }
         ]
 
-    def list_doctor_tasks(self, limit: int):
+    def list_doctor_tasks(self, limit: int, status: str | None = None):
         self.requested_limits.append(limit)
+        self.requested_statuses.append(status)
         return [
             {
                 "id": "task-running",
@@ -227,6 +239,7 @@ def test_api_exposes_console_read_endpoints() -> None:
     entries = client.get("/api/v1/entries")
     runs = client.get("/api/v1/runs?limit=5")
     tasks = client.get("/api/v1/doctor-tasks?limit=7")
+    filtered = client.get("/api/v1/doctor-tasks?limit=7&status=queued")
     stats = client.get("/api/v1/stats")
 
     assert entries.status_code == 200
@@ -235,15 +248,17 @@ def test_api_exposes_console_read_endpoints() -> None:
     assert runs.json()[0]["id"] == "job-0:1"
     assert tasks.status_code == 200
     assert tasks.json()[0]["id"] == "task-running"
+    assert filtered.status_code == 200
     assert stats.status_code == 200
     assert stats.json()["doctor_tasks"] == {"running": 1}
-    assert control.requested_limits == [5, 7]
+    assert control.requested_limits == [5, 7, 7]
+    assert control.requested_statuses == [None, "queued"]
 
 
 def test_api_never_serializes_a_lease_token_even_if_control_leaks_one() -> None:
     class LeakyControl(ConsoleFakeControl):
-        def list_doctor_tasks(self, limit: int):
-            tasks = super().list_doctor_tasks(limit)
+        def list_doctor_tasks(self, limit: int, status: str | None = None):
+            tasks = super().list_doctor_tasks(limit, status)
             tasks[0]["lease"]["token"] = "secret-fencing-token"
             return tasks
 

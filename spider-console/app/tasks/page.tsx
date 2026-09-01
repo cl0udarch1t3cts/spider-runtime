@@ -2,25 +2,54 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { StatusBadge } from "@/components/status-badge";
-import { ago, isLive, sha } from "@/lib/types";
+import { ago, isLive, sha, type DoctorTask } from "@/lib/types";
 
 function TasksView() {
   const { data, error } = useOverview();
   const initialStatus = useSearchParams().get("status");
   const [status, setStatus] = useState<string | null>(initialStatus);
+  const [tasks, setTasks] = useState<DoctorTask[] | null>(null);
+  const [tasksError, setTasksError] = useState<string | null>(null);
 
-  const tasks = useMemo(() => data?.executor.tasks ?? [], [data]);
   const counts = data?.executor.stats?.doctor_tasks ?? {};
 
-  const filtered = useMemo(
-    () => (status ? tasks.filter((task) => task.status === status) : tasks),
-    [tasks, status],
-  );
+  // Server-side filtering: with hundreds of task docs, the newest-200 window
+  // for the selected status comes from the API, not from slicing the overview.
+  useEffect(() => {
+    let cancelled = false;
+    setTasks(null);
+    const load = async () => {
+      try {
+        const query = status ? `?status=${encodeURIComponent(status)}` : "";
+        const response = await fetch(`/api/tasks${query}`, {
+          cache: "no-store",
+        });
+        const body = (await response.json()) as
+          | DoctorTask[]
+          | { error: string };
+        if (cancelled) return;
+        if (Array.isArray(body)) {
+          setTasks(body);
+          setTasksError(null);
+        } else {
+          setTasksError(body.error);
+        }
+      } catch (exc) {
+        if (!cancelled) setTasksError(String(exc));
+      }
+    };
+    load();
+    const timer = setInterval(load, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [status]);
 
-  if (!data) {
+  if (!data && !tasks) {
     return <p className="muted">loading{error ? ` — ${error}` : "…"}</p>;
   }
 
@@ -45,8 +74,13 @@ function TasksView() {
               </button>
             ))}
           </div>
-          <span className="muted">latest {tasks.length} tasks shown</span>
+          <span className="muted">
+            {tasks
+              ? `newest ${tasks.length}${status ? ` ${status}` : ""} shown`
+              : "loading…"}
+          </span>
         </div>
+        {tasksError ? <p className="error">{tasksError}</p> : null}
         <div className="scroll tall">
           <table>
             <thead>
@@ -62,7 +96,7 @@ function TasksView() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((task) => (
+              {(tasks ?? []).map((task) => (
                 <tr key={task.id}>
                   <td title={task.id}>
                     {task.entry_id ? (

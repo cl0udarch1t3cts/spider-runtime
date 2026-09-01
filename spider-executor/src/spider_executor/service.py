@@ -601,10 +601,11 @@ class MongoControlService:
             .limit(limit)
         ]
 
-    def list_doctor_tasks(self, limit: int = 50) -> list[dict]:
+    def list_doctor_tasks(self, limit: int = 50, status: str | None = None) -> list[dict]:
         tasks = []
+        query = {"status": status} if status else {}
         for document in (
-            self.db.doctor_tasks.find().sort("updated_at", DESCENDING).limit(limit)
+            self.db.doctor_tasks.find(query).sort("updated_at", DESCENDING).limit(limit)
         ):
             lease = document.get("lease")
             tasks.append(

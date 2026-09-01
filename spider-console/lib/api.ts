@@ -45,6 +45,13 @@ export async function fetchRecord(recordId: string) {
   );
 }
 
+export async function fetchDoctorTasks(status: string | null) {
+  const filter = status ? `&status=${encodeURIComponent(status)}` : "";
+  return executorGet<Record<string, unknown>[]>(
+    `/api/v1/doctor-tasks?limit=200${filter}`,
+  );
+}
+
 export async function fetchEntryRuns(entryId: string) {
   return executorGet<Record<string, unknown>[]>(
     `/api/v1/entries/${encodeURIComponent(entryId)}/runs`,
