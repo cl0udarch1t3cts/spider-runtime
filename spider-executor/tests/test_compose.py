@@ -14,6 +14,16 @@ def test_mongodb_is_published_only_on_host_loopback() -> None:
     assert '      - "0.0.0.0:27017:27017"' not in compose
 
 
+def test_mongodb_loopback_publish_is_effective() -> None:
+    # Docker silently ignores published ports on a container whose networks
+    # are all internal; mongo needs one non-internal network for the
+    # loopback publish to actually bind on the host.
+    compose = (ROOT / "docker-compose.yml").read_text()
+    mongo = compose.split("  mongo:\n", 1)[1].split("  mongo-init:", 1)[0]
+
+    assert "networks: [control, edge]" in mongo
+
+
 def test_runtime_volumes_are_initialized_for_the_runtime_user() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
 

@@ -7,7 +7,9 @@ services:
       - mongo-data:/data/db
     ports:
       - "127.0.0.1:27017:27017"
-    networks: [control]
+    # edge is required for the publish: ports on a container attached only
+    # to internal networks are silently ignored by Docker.
+    networks: [control, edge]
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 3s
