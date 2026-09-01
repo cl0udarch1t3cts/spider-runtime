@@ -9,6 +9,7 @@ export function Ago({ iso }: { iso: string | null | undefined }) {
   return (
     <span
       title={date.toLocaleString(undefined, {
+        year: "numeric",
         month: "2-digit",
         day: "2-digit",
         hour: "2-digit",
