@@ -98,6 +98,23 @@ export default function OverviewPage() {
   const [failingCount, setFailingCount] = useState<number | null>(null);
   const [retryNote, setRetryNote] = useState<string | null>(null);
 
+  const scrapeAll = async () => {
+    setRetryNote("enqueueing a full sweep…");
+    try {
+      const response = await fetch("/api/scrape-all", { method: "POST" });
+      const body = await response.json().catch(() => null);
+      if (response.ok) {
+        setRetryNote(
+          `sweep queued: ${Number(body?.enqueued ?? 0)} entries enqueued, ${Number(body?.skipped ?? 0)} without an activated scraper skipped`,
+        );
+      } else {
+        setRetryNote(String(body?.detail ?? body?.error ?? `HTTP ${response.status}`));
+      }
+    } catch (exc) {
+      setRetryNote(String(exc));
+    }
+  };
+
   const retry = async (entryId: string) => {
     setRetryNote(`enqueueing ${entryId}…`);
     try {
@@ -173,10 +190,18 @@ export default function OverviewPage() {
       <section className="panel wide">
         <h2>
           Scraping{" "}
+          <button
+            className="action"
+            title="Enqueue one run for every entry with an activated scraper (deterministic, no LLM). Repeating within the same hour reuses the existing jobs."
+            onClick={scrapeAll}
+          >
+            scrape all
+          </button>{" "}
           <Link className="more" href="/runs">
             triage →
           </Link>
         </h2>
+        {retryNote ? <p className="note">{retryNote}</p> : null}
         {stats ? (
           <div className="counts">
             <Link className="count" href="/entries">
@@ -212,7 +237,6 @@ export default function OverviewPage() {
             all runs →
           </Link>
         </h2>
-        {retryNote ? <p className="note">{retryNote}</p> : null}
         <div className="scroll">
           <table>
             <thead>
