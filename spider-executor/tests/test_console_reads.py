@@ -116,6 +116,38 @@ def test_service_lists_entries_most_recently_updated_first_tolerating_legacy_doc
     assert entries[1]["scraper_release"] == "a" * 40
 
 
+def test_service_lists_entries_with_last_scraped_from_latest_successful_run() -> None:
+    db = mongomock.MongoClient().spider
+    service = MongoControlService(db)
+    now = datetime.now(UTC)
+    db.entries.insert_many(
+        [
+            {"_id": "entry-scraped", "businessname": "A", "updated_at": now},
+            {"_id": "entry-never", "businessname": "B", "updated_at": now},
+        ]
+    )
+    db.execution_runs.insert_many(
+        [
+            {"_id": "r1", "entry_id": "entry-scraped", "status": "succeeded",
+             "started_at": now - timedelta(hours=3)},
+            {"_id": "r2", "entry_id": "entry-scraped", "status": "succeeded",
+             "started_at": now - timedelta(hours=1)},
+            # a newer failed run must not count as "scraped"
+            {"_id": "r3", "entry_id": "entry-scraped", "status": "failed",
+             "started_at": now - timedelta(minutes=5)},
+        ]
+    )
+
+    entries = {entry["id"]: entry for entry in service.list_entries()}
+
+    scraped = entries["entry-scraped"]["last_scraped_at"]
+    assert scraped is not None
+    # Mongo stores naive-UTC datetimes at millisecond precision.
+    expected = (now - timedelta(hours=1)).replace(tzinfo=None)
+    assert abs((scraped - expected).total_seconds()) < 0.01
+    assert entries["entry-never"]["last_scraped_at"] is None
+
+
 def test_service_lists_recent_runs_across_entries_with_limit() -> None:
     service = seeded_service()
 

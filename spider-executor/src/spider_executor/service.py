@@ -685,6 +685,15 @@ class MongoControlService:
     # --- read-only console listings -----------------------------------------
 
     def list_entries(self) -> list[dict]:
+        last_scraped = {
+            item["_id"]: item["at"]
+            for item in self.db.execution_runs.aggregate(
+                [
+                    {"$match": {"status": "succeeded", "entry_id": {"$type": "string"}}},
+                    {"$group": {"_id": "$entry_id", "at": {"$max": "$started_at"}}},
+                ]
+            )
+        }
         # View dicts, not Entry models: pre-contract entry documents lack
         # entry_id/businessname and must still be listable.
         return [
@@ -696,6 +705,7 @@ class MongoControlService:
                 "scraper_release": document.get("scraper_release"),
                 "created_at": document.get("created_at"),
                 "updated_at": document.get("updated_at"),
+                "last_scraped_at": last_scraped.get(str(document["_id"])),
             }
             for document in self.db.entries.find().sort("updated_at", DESCENDING)
         ]

@@ -77,6 +77,7 @@ class EntryView(BaseModel):
     scraper_release: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    last_scraped_at: datetime | None = None
 
 
 class DoctorLeaseView(BaseModel):

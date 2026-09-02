@@ -38,6 +38,7 @@ export interface EntryRow {
   active: boolean;
   scraper_release: string | null;
   updated_at: string | null;
+  last_scraped_at: string | null;
 }
 
 export interface Overview {

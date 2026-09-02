@@ -122,7 +122,7 @@ function EntriesView() {
                 <th>entry</th>
                 <th>active</th>
                 <th>release</th>
-                <th title="Time since the entry record last changed: re-registration or a new scraper release being activated. Not the last scrape - see the entry's runs for that">updated</th>
+                <th title="Latest successful scrape run for this entry">last scraped</th>
                 <th>actions</th>
               </tr>
             </thead>
@@ -143,7 +143,7 @@ function EntriesView() {
                   </td>
                   <td>{entry.active ? "yes" : "no"}</td>
                   <td>{sha(entry.scraper_release)}</td>
-                  <td><Ago iso={entry.updated_at} /></td>
+                  <td><Ago iso={entry.last_scraped_at} /></td>
                   <td>
                     <Link
                       className="action secondary"
