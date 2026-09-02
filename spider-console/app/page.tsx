@@ -419,7 +419,7 @@ export default function OverviewPage() {
                   <th>entry</th>
                   <th>status</th>
                   <th>att</th>
-                  <th title="Why the Doctor's most recent attempt failed (task-level). Script execution failures show as a run's failure class instead">last error</th>
+                  <th title="Why this task's most recent attempt failed; retries overwrite it. Each create/repair cycle is its own task row, so an entry can have several">error</th>
                   <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
                 </tr>
               </thead>

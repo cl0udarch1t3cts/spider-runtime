@@ -116,7 +116,7 @@ function TasksView() {
                 <th title="How long the current attempt has been running, or how long the recorded attempt took (claim to verified candidate)">duration</th>
                 <th>candidate</th>
                 <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
-                <th title="Why the Doctor's most recent attempt failed (task-level). Script execution failures show as a run's failure class instead">last error</th>
+                <th title="Why this task's most recent attempt failed; retries overwrite it. Each create/repair cycle is its own task row, so an entry can have several">error</th>
               </tr>
             </thead>
             <tbody>
@@ -171,20 +171,10 @@ function TasksView() {
                   <td>{sha(task.candidate_sha)}</td>
                   <td><Ago iso={task.updated_at} /></td>
                   <td
-                    className={`err-cell ${task.status === "succeeded" ? "muted" : ""}`}
-                    title={
-                      task.last_error
-                        ? task.status === "succeeded"
-                          ? `From an earlier failed attempt; the task later succeeded. ${task.last_error}`
-                          : task.last_error
-                        : ""
-                    }
+                    className="err-cell"
+                    title={task.status === "succeeded" ? "" : (task.last_error ?? "")}
                   >
-                    {task.last_error
-                      ? task.status === "succeeded"
-                        ? `earlier attempt: ${task.last_error}`
-                        : task.last_error
-                      : "—"}
+                    {task.status === "succeeded" ? "—" : (task.last_error ?? "—")}
                   </td>
                 </tr>
               ))}
