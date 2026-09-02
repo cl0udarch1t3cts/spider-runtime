@@ -6,7 +6,14 @@ import { Suspense, useEffect, useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
-import { isLive, sha, sortedStatusCounts, type DoctorTask } from "@/lib/types";
+import {
+  formatSeconds,
+  isLive,
+  sha,
+  sortedStatusCounts,
+  taskDuration,
+  type DoctorTask,
+} from "@/lib/types";
 import { replaceParam } from "@/lib/url-state";
 
 function TasksView() {
@@ -92,6 +99,7 @@ function TasksView() {
                 <th>status</th>
                 <th>att</th>
                 <th>worker / lease</th>
+                <th title="How long the current attempt has been running, or how long the recorded attempt took (claim to verified candidate)">duration</th>
                 <th>candidate</th>
                 <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
                 <th title="Why the Doctor's most recent attempt failed (task-level). Script execution failures show as a run's failure class instead">last error</th>
@@ -128,6 +136,15 @@ function TasksView() {
                     ) : (
                       "—"
                     )}
+                  </td>
+                  <td
+                    title={
+                      task.hermes_seconds !== null && task.hermes_seconds !== undefined
+                        ? `Hermes container: ${formatSeconds(task.hermes_seconds)}`
+                        : undefined
+                    }
+                  >
+                    {taskDuration(task)}
                   </td>
                   <td>{sha(task.candidate_sha)}</td>
                   <td><Ago iso={task.updated_at} /></td>

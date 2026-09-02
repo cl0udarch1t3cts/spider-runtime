@@ -13,6 +13,8 @@ export interface DoctorTask {
   failure_class: string | null;
   last_error: string | null;
   candidate_sha: string | null;
+  attempt_seconds: number | null;
+  hermes_seconds: number | null;
   updated_at: string | null;
   lease: Lease | null;
 }
@@ -157,6 +159,25 @@ export function fieldText(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value;
   return JSON.stringify(value, null, 1);
+}
+
+export function formatSeconds(s: number): string {
+  if (s < 10) return `${s.toFixed(1)}s`;
+  if (s < 90) return `${Math.round(s)}s`;
+  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+}
+
+// Claiming a task is the only write that touches updated_at while an attempt
+// is in flight, so it doubles as the attempt start for live tasks.
+export function taskDuration(task: DoctorTask): string {
+  if (isLive(task) && task.updated_at) {
+    const s = (Date.now() - parseUtc(task.updated_at).getTime()) / 1000;
+    return s >= 0 ? `${formatSeconds(s)}…` : "—";
+  }
+  if (task.attempt_seconds !== null && task.attempt_seconds !== undefined) {
+    return formatSeconds(task.attempt_seconds);
+  }
+  return "—";
 }
 
 export function runDuration(

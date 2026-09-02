@@ -64,6 +64,10 @@ def seeded_service() -> MongoControlService:
                 "status": "succeeded",
                 "attempts": 1,
                 "max_attempts": 2,
+                "result": {
+                    "status": "awaiting_review",
+                    "metadata": {"hermes_seconds": 421.5, "attempt_seconds": 450.0},
+                },
                 "created_at": now - timedelta(hours=2),
                 "updated_at": now - timedelta(hours=2),
             },
@@ -141,6 +145,19 @@ def test_service_lists_doctor_tasks_newest_first_without_lease_token() -> None:
     assert running["lease"]["worker_id"] == "doctor-1"
     assert "token" not in running["lease"]
     assert running["last_error"] == "previous attempt failed"
+
+
+def test_service_exposes_generation_durations_from_task_result_metadata() -> None:
+    service = seeded_service()
+
+    tasks = service.list_doctor_tasks(limit=10)
+
+    finished = next(task for task in tasks if task["id"] == "task-old")
+    assert finished["attempt_seconds"] == 450.0
+    assert finished["hermes_seconds"] == 421.5
+    running = next(task for task in tasks if task["id"] == "task-running")
+    assert running["attempt_seconds"] is None
+    assert running["hermes_seconds"] is None
 
 
 def test_service_lists_only_unresolved_run_failures() -> None:

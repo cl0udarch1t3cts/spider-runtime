@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
-import { duration, isLive, sha, sortedStatusCounts, runDuration } from "@/lib/types";
+import { duration, isLive, sha, sortedStatusCounts, runDuration, taskDuration } from "@/lib/types";
 
 function BudgetEditor({
   dailyPercent,
@@ -254,6 +254,7 @@ export default function OverviewPage() {
                   <th>type</th>
                   <th>att</th>
                   <th>worker / lease</th>
+                  <th title="How long the current attempt has been running (since claim)">duration</th>
                   <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
                 </tr>
               </thead>
@@ -285,6 +286,7 @@ export default function OverviewPage() {
                         "—"
                       )}
                     </td>
+                    <td>{taskDuration(task)}</td>
                     <td><Ago iso={task.updated_at} /></td>
                   </tr>
                 ))}

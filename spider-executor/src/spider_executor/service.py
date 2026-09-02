@@ -653,6 +653,11 @@ class MongoControlService:
             self.db.doctor_tasks.find(query).sort("updated_at", DESCENDING).limit(limit)
         ):
             lease = document.get("lease")
+            # Generation timing recorded by the Doctor worker; the published
+            # result wins over a pending candidate payload.
+            result = document.get("result") or document.get("candidate_result") or {}
+            metadata = result.get("metadata") if isinstance(result, dict) else None
+            metadata = metadata if isinstance(metadata, dict) else {}
             tasks.append(
                 {
                     "id": str(document["_id"]),
@@ -664,6 +669,8 @@ class MongoControlService:
                     "failure_class": document.get("failure_class"),
                     "last_error": document.get("last_error"),
                     "candidate_sha": document.get("candidate_sha"),
+                    "attempt_seconds": metadata.get("attempt_seconds"),
+                    "hermes_seconds": metadata.get("hermes_seconds"),
                     "available_at": document.get("available_at"),
                     "created_at": document.get("created_at"),
                     "updated_at": document.get("updated_at"),
