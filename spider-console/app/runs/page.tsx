@@ -151,13 +151,15 @@ function RunsView() {
                 {item.label}
               </button>
             ))}
-            <button
-              className="action"
-              title="Enqueue one run for every entry with an activated scraper (deterministic, no LLM). Repeating within the same hour reuses the existing jobs."
-              onClick={() => sweep("/api/scrape-all", "full sweep")}
-            >
-              scrape all
-            </button>{" "}
+          </div>
+          <div className="toolbar-actions">
+            <span className="muted">
+              {filter === "failing"
+                ? failing
+                  ? `${failing.length} entries still failing`
+                  : "loading…"
+                : `latest ${rows.length} shown`}
+            </span>
             <button
               className="action"
               title="Enqueue a fresh run only for entries whose latest run failed"
@@ -165,14 +167,14 @@ function RunsView() {
             >
               scrape failed
             </button>
+            <button
+              className="action"
+              title="Enqueue one run for every entry with an activated scraper (deterministic, no LLM). Repeating within the same hour reuses the existing jobs."
+              onClick={() => sweep("/api/scrape-all", "full sweep")}
+            >
+              scrape all
+            </button>
           </div>
-          <span className="muted">
-            {filter === "failing"
-              ? failing
-                ? `${failing.length} entries still failing`
-                : "loading…"
-              : `latest ${rows.length} shown`}
-          </span>
         </div>
         {failingError && filter === "failing" ? (
           <p className="error">{failingError}</p>
