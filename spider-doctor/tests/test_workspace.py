@@ -33,6 +33,24 @@ def test_prepares_disposable_clone_at_exact_release(tmp_path: Path) -> None:
     assert git(workspace, "status", "--porcelain") == ""
 
 
+def test_prepare_uses_a_blobless_partial_clone(tmp_path: Path) -> None:
+    source, _ = origin(tmp_path)
+    # A second commit whose blob the workspace must never need to copy.
+    (source / "scrapers" / "example" / "meta.json").write_text("{}\n")
+    git(source, "add", ".")
+    git(source, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "second")
+    first_release = git(source, "rev-parse", "HEAD~1")
+    manager = GitWorkspace(source, tmp_path / "work")
+
+    workspace = manager.prepare("task-1", first_release)
+
+    assert git(workspace, "config", "remote.origin.partialclonefilter") == "blob:none"
+    assert git(workspace, "config", "remote.origin.promisor") == "true"
+    assert git(workspace, "rev-parse", "HEAD") == first_release
+    # The full commit graph is present for merge-base/rebase computations.
+    assert git(workspace, "rev-list", "--count", "--all") == "2"
+
+
 def test_validates_only_task_scoped_changes(tmp_path: Path) -> None:
     source, release = origin(tmp_path)
     manager = GitWorkspace(source, tmp_path / "work")

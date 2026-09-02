@@ -50,13 +50,40 @@ class GitWorkspace:
         workspace = self.workspace_root / safe_id
         if workspace.exists():
             shutil.rmtree(workspace)
+        # Blobless partial clone: the full commit graph travels (rebases and
+        # merge-base computations stay exact) but blobs are fetched on demand,
+        # so historical file versions are never copied per task. The source
+        # checkout is read-only, hence the permissive upload-pack is supplied
+        # on the client side instead of via source repository config.
+        permissive_upload_pack = (
+            "git -c uploadpack.allowfilter=true -c uploadpack.allowanysha1inwant=true upload-pack"
+        )
         subprocess.run(
-            ["git", "clone", "--quiet", "--no-local", "--no-checkout", str(self.source_repository), str(workspace)],
+            [
+                "git",
+                "clone",
+                "--quiet",
+                "--no-local",
+                "--no-checkout",
+                "--filter=blob:none",
+                "--upload-pack",
+                permissive_upload_pack,
+                str(self.source_repository),
+                str(workspace),
+            ],
             check=True,
             capture_output=True,
             text=True,
             timeout=120,
         )
+        # Lazy blob fetches (checkout below, later rebases while origin is
+        # still the local path) need the same permissive upload-pack.
+        self._run(workspace, "config", "remote.origin.uploadpack", permissive_upload_pack)
+        # Checkout while origin still points at the local source so the
+        # release's blobs come from disk, not the network.
+        self._run(workspace, "checkout", "--quiet", "--detach", release)
+        if self._run(workspace, "rev-parse", "HEAD") != release:
+            raise RuntimeError("workspace did not resolve to requested release")
         source_remote = subprocess.run(
             ["git", "remote", "get-url", "origin"],
             cwd=self.source_repository,
@@ -66,10 +93,9 @@ class GitWorkspace:
             timeout=30,
         )
         if source_remote.returncode == 0 and source_remote.stdout.strip():
+            # The real remote speaks stock upload-pack; drop the local override.
+            self._run(workspace, "config", "--unset", "remote.origin.uploadpack")
             self._run(workspace, "remote", "set-url", "origin", source_remote.stdout.strip())
-        self._run(workspace, "checkout", "--quiet", "--detach", release)
-        if self._run(workspace, "rev-parse", "HEAD") != release:
-            raise RuntimeError("workspace did not resolve to requested release")
         if self._run(workspace, "status", "--porcelain", "--untracked-files=all"):
             raise RuntimeError("new Doctor workspace is unexpectedly dirty")
         self._expected_heads[workspace.resolve()] = release
