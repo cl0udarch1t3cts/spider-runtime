@@ -228,8 +228,7 @@ function EntryDetailView() {
                   <th>release</th>
                   <th>record</th>
                   <th>started</th>
-                <th title="Wall-clock time from run start to finish">duration</th>
-                  <th>actions</th>
+                  <th title="Wall-clock time from run start to finish">duration</th>
                 </tr>
               </thead>
               <tbody>
@@ -262,16 +261,7 @@ function EntryDetailView() {
                       )}
                     </td>
                     <td><Ago iso={run.started_at} /></td>
-                <td>{runDuration(run.started_at, run.finished_at)}</td>
-                    <td>
-                      <button
-                        className="action"
-                        title="Run this entry's scraper again now (deterministic, no LLM)"
-                        onClick={triggerFetch}
-                      >
-                        retry
-                      </button>
-                    </td>
+                    <td>{runDuration(run.started_at, run.finished_at)}</td>
                   </tr>
                 ))}
               </tbody>
