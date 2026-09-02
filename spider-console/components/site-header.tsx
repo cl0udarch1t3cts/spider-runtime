@@ -51,7 +51,7 @@ export function SiteHeader() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="Cloud Architects" width={30} height={30} />
         <div>
-          <h1>SPIDER CONSOLE</h1>
+          <h1>SPAIDER CONSOLE</h1>
           <span className="tagline">Cloud Architects</span>
         </div>
       </div>

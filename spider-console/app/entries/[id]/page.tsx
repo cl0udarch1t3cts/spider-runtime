@@ -156,7 +156,7 @@ function EntryDetailView() {
             disabled={!entry?.scraper_release}
             title={
               entry?.scraper_release
-                ? "Run the spider script now and fetch the latest data"
+                ? "Run the spaider script now and fetch the latest data"
                 : "no activated scraper release yet (Doctor has not published a scraper)"
             }
             onClick={triggerFetch}

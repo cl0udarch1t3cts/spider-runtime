@@ -11,9 +11,9 @@ const brandFont = Radio_Canada_Big({
 });
 
 export const metadata: Metadata = {
-  title: "Spider Console · Cloud Architects",
+  title: "Spaider Console · Cloud Architects",
   description:
-    "Cloud Architects GmbH — live view of spider tasks, runs, records, and budget",
+    "Cloud Architects GmbH — live view of spaider tasks, runs, records, and budget",
   icons: { icon: "/logo.svg" },
 };
 
