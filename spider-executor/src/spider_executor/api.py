@@ -34,6 +34,7 @@ class Control(Protocol):
     ) -> list[dict]: ...
     def get_run_log(self, run_id: str) -> dict | None: ...
     def request_repair(self, run_id: str) -> dict | None: ...
+    def enqueue_all(self, trigger: str = "console") -> dict: ...
     def stats(self) -> dict: ...
     def doctor_paused(self) -> bool: ...
     def set_doctor_paused(self, paused: bool) -> bool: ...
@@ -115,6 +116,11 @@ class RunView(BaseModel):
     finished_at: datetime | None = None
 
 
+class ScrapeAllView(BaseModel):
+    enqueued: int
+    skipped: int
+
+
 class RepairRequestView(BaseModel):
     task_id: str | None = None
     entry_id: str | None = None
@@ -184,6 +190,10 @@ def create_app(control: Control) -> FastAPI:
     @app.get("/api/v1/entries/{entry_id}/runs", response_model=list[ExecutionRun])
     def list_runs(entry_id: str) -> list[ExecutionRun]:
         return control.list_runs(entry_id)
+
+    @app.post("/api/v1/execution-jobs/scrape-all", response_model=ScrapeAllView, status_code=202)
+    def scrape_all() -> dict:
+        return control.enqueue_all(trigger="console")
 
     @app.post("/api/v1/execution-jobs", response_model=ExecutionJob, status_code=201)
     def create_job(request: JobRequest) -> ExecutionJob:

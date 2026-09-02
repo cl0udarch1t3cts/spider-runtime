@@ -63,6 +63,24 @@ export async function fetchDoctorTasks(
   );
 }
 
+export async function scrapeAll(): Promise<{
+  ok: boolean;
+  status: number;
+  body: unknown;
+}> {
+  const response = await fetch(`${EXECUTOR_API_URL}/api/v1/execution-jobs/scrape-all`, {
+    method: "POST",
+    cache: "no-store",
+    // Sweeping ~800 entries takes a moment server-side.
+    signal: AbortSignal.timeout(60_000),
+  });
+  return {
+    ok: response.ok,
+    status: response.status,
+    body: await response.json().catch(() => null),
+  };
+}
+
 export async function requestRepair(runId: string): Promise<{
   ok: boolean;
   status: number;

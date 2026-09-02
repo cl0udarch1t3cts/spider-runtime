@@ -428,6 +428,33 @@ class MongoControlService:
         job.scraper_release = entry.scraper_release
         return self.jobs.enqueue(job)
 
+    def enqueue_all(self, trigger: str = "console") -> dict:
+        """Enqueue one execution job for every active, activated entry.
+
+        The idempotency key is bucketed by hour, so repeated sweeps within
+        the same hour reuse the existing jobs instead of duplicating them.
+        Entries without an activated release are skipped, not errors.
+        """
+        bucket = datetime.now(UTC).strftime("%Y-%m-%dT%H")
+        enqueued = 0
+        skipped = 0
+        for document in self.db.entries.find(
+            {"active": {"$ne": False}}, {"_id": 1, "scraper_release": 1}
+        ):
+            entry_id = str(document["_id"])
+            try:
+                self.enqueue(
+                    ExecutionJob(
+                        entry_id=entry_id,
+                        idempotency_key=f"scrape-all:{entry_id}:{bucket}",
+                        trigger=trigger,
+                    )
+                )
+                enqueued += 1
+            except RuntimeError:
+                skipped += 1
+        return {"enqueued": enqueued, "skipped": skipped}
+
     def is_entry_release_activated(self, entry_id: str, release: str | None) -> bool:
         entry = self.get_entry(entry_id)
         if entry is None or not entry.scraper_release or release != entry.scraper_release:

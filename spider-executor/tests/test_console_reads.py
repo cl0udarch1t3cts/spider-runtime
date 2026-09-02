@@ -368,6 +368,20 @@ def test_api_passes_entry_filter_to_doctor_task_listing() -> None:
     assert control.requested_entry_ids == ["entry-0"]
 
 
+def test_api_scrape_all_reports_sweep_counts() -> None:
+    class SweepControl(ConsoleFakeControl):
+        def enqueue_all(self, trigger: str = "console"):
+            self.sweep_trigger = trigger
+            return {"enqueued": 5, "skipped": 2}
+
+    control = SweepControl()
+    response = TestClient(create_app(control)).post("/api/v1/execution-jobs/scrape-all")
+
+    assert response.status_code == 202
+    assert response.json() == {"enqueued": 5, "skipped": 2}
+    assert control.sweep_trigger == "console"
+
+
 def test_api_accepts_operator_repair_requests() -> None:
     class RepairControl(ConsoleFakeControl):
         def request_repair(self, run_id: str):

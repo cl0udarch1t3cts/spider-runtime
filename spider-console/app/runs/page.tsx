@@ -57,6 +57,23 @@ function RunsView() {
     }
   };
 
+  const scrapeAll = async () => {
+    setRetryNote("enqueueing a full sweep…");
+    try {
+      const response = await fetch("/api/scrape-all", { method: "POST" });
+      const body = await response.json().catch(() => null);
+      if (response.ok) {
+        setRetryNote(
+          `sweep queued: ${Number(body?.enqueued ?? 0)} entries enqueued, ${Number(body?.skipped ?? 0)} without an activated scraper skipped`,
+        );
+      } else {
+        setRetryNote(String(body?.detail ?? body?.error ?? `HTTP ${response.status}`));
+      }
+    } catch (exc) {
+      setRetryNote(String(exc));
+    }
+  };
+
   const sendToDoctor = async (runId: string, entryId: string) => {
     setRetryNote(`sending ${entryId} to the Doctor…`);
     try {
@@ -134,6 +151,13 @@ function RunsView() {
                 {item.label}
               </button>
             ))}
+            <button
+              className="action"
+              title="Enqueue one run for every entry with an activated scraper (deterministic, no LLM). Repeating within the same hour reuses the existing jobs."
+              onClick={scrapeAll}
+            >
+              scrape all
+            </button>
           </div>
           <span className="muted">
             {filter === "failing"

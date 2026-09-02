@@ -227,6 +227,26 @@ def test_repair_budget_persists_across_fresh_tasks_and_requires_human_review() -
     assert service.db.entries.find_one({"_id": "example"})["repair_attempts"] == 2
 
 
+def test_scrape_all_enqueues_every_activated_entry_once_per_hour() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider)
+    service.put_entry(
+        Entry(entry_id="ready", businessname="Ready", address="Bern", scraper_release="a" * 40)
+    )
+    service.db.runtime_state.insert_one(
+        {"_id": "activated_entry:ready", "entry_id": "ready", "scraper_release": "a" * 40}
+    )
+    # Registered but never provisioned: must be skipped, not crash the sweep.
+    service.put_entry(Entry(entry_id="bare", businessname="Bare", address="Bern"))
+
+    first = service.enqueue_all(trigger="console")
+    second = service.enqueue_all(trigger="console")
+
+    assert first == {"enqueued": 1, "skipped": 1}
+    # Same hour bucket: the sweep is idempotent, no duplicate jobs.
+    assert second == {"enqueued": 1, "skipped": 1}
+    assert service.db.execution_jobs.count_documents({"entry_id": "ready"}) == 1
+
+
 def test_operator_can_request_repair_from_a_recorded_run() -> None:
     service = MongoControlService(mongomock.MongoClient().spider)
     service.put_entry(
