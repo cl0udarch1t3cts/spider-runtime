@@ -126,12 +126,20 @@ export default function OverviewPage() {
   const runs = executor.runs ?? [];
   const budget = usage && !usage.error ? usage.budget : null;
   const live = tasks.filter(isLive);
+  // A failed task is only a problem while it is the entry's latest word:
+  // an exhausted create superseded by a later successful one is history.
+  const latestTaskByEntry = new Map<string, string>();
+  for (const task of tasks) {
+    const key = task.entry_id ?? task.id;
+    if (!latestTaskByEntry.has(key)) latestTaskByEntry.set(key, task.id);
+  }
   const problems = tasks
     .filter(
       (task) =>
         task.last_error &&
         task.status !== "succeeded" &&
-        !isLive(task),
+        !isLive(task) &&
+        latestTaskByEntry.get(task.entry_id ?? task.id) === task.id,
     )
     .slice(0, 8);
   const recentRuns = runs.slice(0, 10);
