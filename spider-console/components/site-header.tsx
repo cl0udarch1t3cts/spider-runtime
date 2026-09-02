@@ -6,13 +6,13 @@ import { useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { Ago } from "@/components/ago";
 
-// Scraping is the platform's product; it leads the nav. The Doctor is the
-// repair shop you visit when a scrape breaks.
+// Scraping is the platform's product: the overview leads with it, and the
+// Doctor is the repair shop you visit when a scrape breaks.
 const NAV = [
+  { href: "/", label: "Overview" },
   { href: "/runs", label: "Scraping" },
   { href: "/entries", label: "Entries" },
   { href: "/tasks", label: "Doctor tasks" },
-  { href: "/", label: "Overview" },
 ];
 
 export function SiteHeader() {

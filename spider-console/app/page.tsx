@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
@@ -95,6 +95,26 @@ function BudgetEditor({
 
 export default function OverviewPage() {
   const { data, error } = useOverview();
+  const [failingCount, setFailingCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/runs", { cache: "no-store" });
+        const body = (await response.json()) as unknown[] | { error: string };
+        if (!cancelled && Array.isArray(body)) setFailingCount(body.length);
+      } catch {
+        // The scraping panel just shows "…" until the next poll succeeds.
+      }
+    };
+    load();
+    const timer = setInterval(load, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   if (!data) {
     return <p className="muted">loading{error ? ` — ${error}` : "…"}</p>;
@@ -118,6 +138,95 @@ export default function OverviewPage() {
 
   return (
     <div className="grid">
+      <section className="panel">
+        <h2>
+          Scraping{" "}
+          <Link className="more" href="/runs">
+            triage →
+          </Link>
+        </h2>
+        {stats ? (
+          <div className="counts">
+            <Link className="count" href="/entries">
+              <div className="value">{stats.entries}</div>
+              <div className="label">entries</div>
+            </Link>
+            <div className="count">
+              <div className="value">{stats.records}</div>
+              <div className="label">records</div>
+            </div>
+            <Link
+              className="count"
+              href="/runs"
+              title="Entries whose most recent run failed and no run has succeeded since"
+            >
+              <div className="value">{failingCount ?? "…"}</div>
+              <div className="label">still failing</div>
+            </Link>
+            <Link className="count" href="/runs?filter=succeeded">
+              <div className="value">{stats.execution_runs?.["succeeded"] ?? 0}</div>
+              <div className="label">runs ok</div>
+            </Link>
+          </div>
+        ) : (
+          <p className="error">{executor.error ?? "stats unavailable"}</p>
+        )}
+      </section>
+
+      <section className="panel wide">
+        <h2>
+          Recent runs{" "}
+          <Link className="more" href="/runs?filter=all">
+            all runs →
+          </Link>
+        </h2>
+        <div className="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>run</th>
+                <th>entry</th>
+                <th>status</th>
+                <th>failure</th>
+                <th>release</th>
+                <th>started</th>
+                <th title="Wall-clock time from run start to finish">duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentRuns.map((run) => (
+                <tr key={run.id}>
+                  <td>
+                    <Link
+                      className="link"
+                      title="Open this run's scraper log"
+                      href={`/runs/${encodeURIComponent(run.id)}`}
+                    >
+                      {run.id.slice(0, 12)}
+                    </Link>
+                  </td>
+                  <td>
+                    <Link
+                      className="link"
+                      href={`/entries/${encodeURIComponent(run.entry_id)}`}
+                    >
+                      {run.entry_id}
+                    </Link>
+                  </td>
+                  <td>
+                    <StatusBadge value={run.status} />
+                  </td>
+                  <td>{run.failure_class ?? "—"}</td>
+                  <td>{sha(run.scraper_release)}</td>
+                  <td><Ago iso={run.started_at} /></td>
+                  <td>{runDuration(run.started_at, run.finished_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="panel">
         <h2>Subscription budget</h2>
         {budget ? (
@@ -167,7 +276,7 @@ export default function OverviewPage() {
       </section>
 
       <section className="panel">
-        <h2>Totals</h2>
+        <h2>Doctor tasks</h2>
         {executor.error ? (
           <p className="error">{executor.error}</p>
         ) : stats ? (
@@ -175,14 +284,6 @@ export default function OverviewPage() {
             <div className="count">
               <div className="value">{live.length}</div>
               <div className="label">live tasks</div>
-            </div>
-            <Link className="count" href="/entries">
-              <div className="value">{stats.entries}</div>
-              <div className="label">entries</div>
-            </Link>
-            <div className="count">
-              <div className="value">{stats.records}</div>
-              <div className="label">records</div>
             </div>
             {sortedStatusCounts(stats.doctor_tasks).map(([status, count]) => (
               <Link
@@ -296,50 +397,6 @@ export default function OverviewPage() {
         ) : (
           <p className="muted">no Doctor task is running right now</p>
         )}
-      </section>
-
-      <section className="panel wide">
-        <h2>
-          Recent runs{" "}
-          <Link className="more" href="/runs">
-            all runs →
-          </Link>
-        </h2>
-        <div className="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>entry</th>
-                <th>status</th>
-                <th>failure</th>
-                <th>release</th>
-                <th>started</th>
-                <th title="Wall-clock time from run start to finish">duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentRuns.map((run) => (
-                <tr key={run.id}>
-                  <td>
-                    <Link
-                      className="link"
-                      href={`/entries/${encodeURIComponent(run.entry_id)}`}
-                    >
-                      {run.entry_id}
-                    </Link>
-                  </td>
-                  <td>
-                    <StatusBadge value={run.status} />
-                  </td>
-                  <td>{run.failure_class ?? "—"}</td>
-                  <td>{sha(run.scraper_release)}</td>
-                  <td><Ago iso={run.started_at} /></td>
-                <td>{runDuration(run.started_at, run.finished_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </section>
 
       {problems.length ? (
