@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import threading
+import time
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
@@ -130,6 +131,7 @@ class DoctorWorker:
                 return None
             logger.info("Doctor budget proceed task=%s: %s", task.id, decision.detail)
 
+        attempt_started = time.monotonic()
         try:
             if task.candidate_sha:
                 workspace = self.workspace_manager.resume(task.id, task.candidate_sha)
@@ -165,12 +167,17 @@ class DoctorWorker:
                 json.dumps(DoctorResult.model_json_schema(), indent=2, sort_keys=True)
             )
 
+            hermes_started = time.monotonic()
             result = self.launcher.run(
                 task,
                 workspace=workspace,
                 task_file=task_file,
                 output_dir=output_dir,
             )
+            result.metadata = {
+                **result.metadata,
+                "hermes_seconds": round(time.monotonic() - hermes_started, 1),
+            }
             if result.status == DoctorStatus.FAILED:
                 detail = "; ".join(result.errors) or result.summary
                 raise RuntimeError(f"Hermes reported failure: {detail}")
@@ -178,6 +185,16 @@ class DoctorWorker:
             if not actual_changes:
                 raise ValueError("Hermes reported a repair but produced no allowed changes")
             result.changed_files = actual_changes
+            result.metadata = {
+                **result.metadata,
+                "attempt_seconds": round(time.monotonic() - attempt_started, 1),
+            }
+            logger.info(
+                "Doctor task=%s generation timing hermes_seconds=%s attempt_seconds=%s",
+                task.id,
+                result.metadata["hermes_seconds"],
+                result.metadata["attempt_seconds"],
+            )
             result_payload = result.model_dump(mode="json")
             with self._publish_lock:
                 candidate_sha = self.publisher.create_candidate(
@@ -206,7 +223,9 @@ class DoctorWorker:
                     raise RuntimeError("Doctor task lease was lost before publication completion")
             return result
         except Exception as exc:
+            attempt_seconds = round(time.monotonic() - attempt_started, 1)
             error = f"{type(exc).__name__}: {exc}"[:4000]
+            error += f" (attempt_seconds={attempt_seconds})"
             failure_status = self.repository.fail_attempt(
                 task.id,
                 task.lease.token,

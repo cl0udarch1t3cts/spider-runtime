@@ -153,6 +153,50 @@ def test_process_one_returns_none_when_queue_is_empty(tmp_path: Path) -> None:
     assert worker.process_one() is None
 
 
+def test_success_records_generation_durations_in_result_metadata(tmp_path: Path) -> None:
+    repository = FakeRepository(running_task())
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        FakeLauncher(),
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+    )
+
+    worker.process_one()
+
+    metadata = repository.candidate[3]["metadata"]
+    assert metadata["hermes_seconds"] >= 0
+    assert metadata["attempt_seconds"] >= metadata["hermes_seconds"]
+
+
+def test_failure_error_carries_attempt_duration(tmp_path: Path) -> None:
+    class FailedLauncher:
+        def run(self, task, *, workspace, task_file, output_dir):
+            return DoctorResult(
+                status=DoctorStatus.FAILED,
+                summary="could not reproduce",
+                errors=["network unavailable"],
+            )
+
+    repository = FakeRepository(running_task())
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        FailedLauncher(),
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+    )
+
+    worker.process_one()
+
+    assert "attempt_seconds=" in repository.failed[2]
+
+
 def test_operational_failure_is_fenced_and_requeued(tmp_path: Path) -> None:
     class BrokenEvidence:
         def load(self, task):
