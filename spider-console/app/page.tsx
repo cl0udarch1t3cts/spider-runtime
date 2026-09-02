@@ -138,7 +138,7 @@ export default function OverviewPage() {
 
   return (
     <div className="grid">
-      <section className="panel">
+      <section className="panel wide">
         <h2>
           Scraping{" "}
           <Link className="more" href="/runs">
@@ -227,6 +227,7 @@ export default function OverviewPage() {
         </div>
       </section>
 
+      <div className="panel-row">
       <section className="panel">
         <h2>Subscription budget</h2>
         {budget ? (
@@ -338,6 +339,7 @@ export default function OverviewPage() {
           </p>
         </section>
       ) : null}
+      </div>
 
       <section className="panel wide">
         <h2>

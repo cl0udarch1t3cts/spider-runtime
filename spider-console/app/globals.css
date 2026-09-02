@@ -511,3 +511,12 @@ a.action {
   display: inline-block;
   text-decoration: none;
 }
+
+/* A full-width row whose panels always share 100% of the width together,
+   however many of them render. */
+.panel-row {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
