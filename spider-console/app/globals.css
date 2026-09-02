@@ -110,6 +110,7 @@ button.action.pause {
   color: var(--brand-light);
   font-size: 12px;
   padding: 0.3rem 0.9rem;
+  box-shadow: none;
 }
 
 button.action.pause:hover {
@@ -285,20 +286,43 @@ button.link {
 
 button.action,
 a.action {
-  background: var(--brand);
-  border: none;
-  border-radius: 5px;
+  background: linear-gradient(180deg, #6a5cf0 0%, #4c3ed6 100%);
+  border: 1px solid rgba(153, 142, 255, 0.35);
+  border-radius: 6px;
   color: #fff;
   cursor: pointer;
   font: inherit;
   font-size: 11px;
   font-weight: 700;
-  padding: 0.15rem 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.75rem;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
 }
 
 button.action:hover,
 a.action:hover {
-  background: var(--brand-light);
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+  box-shadow:
+    0 3px 10px rgba(91, 77, 229, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+button.action:active,
+a.action:active {
+  transform: translateY(0);
+  filter: brightness(0.95);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+button.action:focus-visible,
+a.action:focus-visible {
+  outline: 2px solid var(--brand-light);
+  outline-offset: 2px;
 }
 
 button.action:disabled {
@@ -311,6 +335,7 @@ button.action.secondary {
   background: transparent;
   border: 1px solid var(--brand);
   color: var(--brand-light);
+  box-shadow: none;
 }
 
 button.action.secondary:hover {
