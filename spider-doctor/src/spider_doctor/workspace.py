@@ -80,20 +80,7 @@ class GitWorkspace:
         # Lazy blob fetches (checkout below, later rebases while origin is
         # still the local path) need the same permissive upload-pack.
         self._run(workspace, "config", "remote.origin.uploadpack", permissive_upload_pack)
-        # Concurrent tasks all append to the shared tracking files; make
-        # publication rebases merge them instead of conflicting. Workspace-local
-        # config only — nothing is committed to the repository.
-        (workspace / ".git" / "info").mkdir(parents=True, exist_ok=True)
-        (workspace / ".git" / "info" / "attributes").write_text(
-            "PROGRESS.md merge=union\nregistry.json merge=registryentries\n"
-        )
-        self._run(workspace, "config", "merge.registryentries.name", "registry entry union")
-        self._run(
-            workspace,
-            "config",
-            "merge.registryentries.driver",
-            f"{sys.executable} -m spider_doctor.merge_registry %O %A %B",
-        )
+        self._configure_shared_file_merges(workspace)
         # Checkout while origin still points at the local source so the
         # release's blobs come from disk, not the network.
         self._run(workspace, "checkout", "--quiet", "--detach", release)
@@ -116,6 +103,22 @@ class GitWorkspace:
         self._expected_heads[workspace.resolve()] = release
         return workspace
 
+    def _configure_shared_file_merges(self, workspace: Path) -> None:
+        # Concurrent tasks all append to the shared tracking files; make
+        # publication rebases merge them instead of conflicting. Workspace-local
+        # config only — nothing is committed to the repository.
+        (workspace / ".git" / "info").mkdir(parents=True, exist_ok=True)
+        (workspace / ".git" / "info" / "attributes").write_text(
+            "PROGRESS.md merge=union\nregistry.json merge=registryentries\n"
+        )
+        self._run(workspace, "config", "merge.registryentries.name", "registry entry union")
+        self._run(
+            workspace,
+            "config",
+            "merge.registryentries.driver",
+            f"{sys.executable} -m spider_doctor.merge_registry %O %A %B",
+        )
+
     def resume(self, task_id: str, candidate_sha: str) -> Path:
         if not re.fullmatch(r"[0-9a-f]{40}", candidate_sha):
             raise ValueError("candidate SHA must be a full 40-character Git SHA")
@@ -123,6 +126,9 @@ class GitWorkspace:
         workspace = (self.workspace_root / safe_id).resolve()
         if not workspace.is_dir() or not (workspace / ".git").is_dir():
             raise RuntimeError("persisted Doctor candidate workspace is unavailable")
+        # Workspaces persisted before the merge drivers existed retry their
+        # publication here; give them the same conflict-free rebase setup.
+        self._configure_shared_file_merges(workspace)
         if self._run(workspace, "rev-parse", "HEAD") != candidate_sha:
             # A crash between a publication rebase and candidate persistence can
             # leave HEAD on an unrecorded SHA (or mid-rebase). The recorded
