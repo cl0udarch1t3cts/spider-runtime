@@ -96,6 +96,30 @@ function BudgetEditor({
 export default function OverviewPage() {
   const { data, error } = useOverview();
   const [failingCount, setFailingCount] = useState<number | null>(null);
+  const [retryNote, setRetryNote] = useState<string | null>(null);
+
+  const retry = async (entryId: string) => {
+    setRetryNote(`enqueueing ${entryId}…`);
+    try {
+      const response = await fetch("/api/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId }),
+      });
+      const body = await response.json().catch(() => null);
+      if (response.ok) {
+        setRetryNote(
+          `job ${String(body?.id ?? "").slice(0, 12)} queued for ${entryId} — a fresh run appears once the worker picks it up`,
+        );
+      } else {
+        setRetryNote(
+          `${entryId}: ${String(body?.detail ?? body?.error ?? `HTTP ${response.status}`)}`,
+        );
+      }
+    } catch (exc) {
+      setRetryNote(`${entryId}: ${String(exc)}`);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -188,6 +212,7 @@ export default function OverviewPage() {
             all runs →
           </Link>
         </h2>
+        {retryNote ? <p className="note">{retryNote}</p> : null}
         <div className="scroll">
           <table>
             <thead>
@@ -199,6 +224,7 @@ export default function OverviewPage() {
                 <th>release</th>
                 <th>started</th>
                 <th title="Wall-clock time from run start to finish">duration</th>
+                <th>actions</th>
               </tr>
             </thead>
             <tbody>
@@ -228,6 +254,15 @@ export default function OverviewPage() {
                   <td>{sha(run.scraper_release)}</td>
                   <td><Ago iso={run.started_at} /></td>
                   <td>{runDuration(run.started_at, run.finished_at)}</td>
+                  <td className="actions">
+                    <button
+                      className="action"
+                      title="Run this entry's scraper again now (deterministic, no LLM)"
+                      onClick={() => retry(run.entry_id)}
+                    >
+                      retry
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

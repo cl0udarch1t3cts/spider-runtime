@@ -17,6 +17,28 @@ export default function RunLogPage() {
   const runId = decodeURIComponent(params.id);
   const [data, setData] = useState<RunLog | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const retry = async (entryId: string) => {
+    setNote("enqueueing…");
+    try {
+      const response = await fetch("/api/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId }),
+      });
+      const body = await response.json().catch(() => null);
+      if (response.ok) {
+        setNote(
+          `job ${String(body?.id ?? "").slice(0, 12)} queued — the fresh run gets its own log page`,
+        );
+      } else {
+        setNote(String(body?.detail ?? body?.error ?? `HTTP ${response.status}`));
+      }
+    } catch (exc) {
+      setNote(String(exc));
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +92,20 @@ export default function RunLogPage() {
               <StatusBadge value={data.status} />
             </>
           ) : null}
+          {data?.entry_id ? (
+            <>
+              {" · "}
+              <button
+                className="action"
+                title="Run this entry's scraper again now (deterministic, no LLM)"
+                onClick={() => retry(data.entry_id!)}
+              >
+                retry
+              </button>
+            </>
+          ) : null}
         </p>
+        {note ? <p className="note">{note}</p> : null}
         {error ? <p className="error">{error}</p> : null}
         {!data && !error ? <p className="muted">loading…</p> : null}
         {data ? (
