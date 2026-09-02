@@ -197,6 +197,29 @@ def test_inactive_entry_does_not_run_or_create_doctor_task() -> None:
     assert service.doctor_task_count() == 0
 
 
+def test_successful_run_backfills_missing_entry_website_from_record() -> None:
+    service = make_service()
+    service.put_entry(activated_entry(website=None))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="one"))
+
+    run = ExecutorWorker(
+        service, FakeRunner(successful_result()), worker_id="worker-1"
+    ).process_one()
+
+    assert run.status == JobStatus.SUCCEEDED
+    assert service.get_entry("example").website == "https://example.com"
+
+
+def test_successful_run_never_overwrites_an_existing_entry_website() -> None:
+    service = make_service()
+    service.put_entry(activated_entry(website="https://registered.example"))
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="one"))
+
+    ExecutorWorker(service, FakeRunner(successful_result()), worker_id="worker-1").process_one()
+
+    assert service.get_entry("example").website == "https://registered.example"
+
+
 def test_failed_run_does_not_auto_refer_to_doctor_while_suspended() -> None:
     # Operator policy: automatic Doctor care is suspended; broken scrapes
     # are referred manually via request_repair until further notice.

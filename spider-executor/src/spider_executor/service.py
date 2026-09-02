@@ -876,6 +876,16 @@ class MongoControlService:
             artifact_document = artifact.model_dump(mode="python")
             artifact_document.update({"_id": run.id, "run_id": run.id})
             self.db.artifacts.replace_one({"_id": run.id}, artifact_document, upsert=True, **kwargs)
+            # The Doctor's free-form result metadata often omits the website;
+            # a validated production record is authoritative enough to fill
+            # the gap (never to overwrite an existing value).
+            parsed = urlparse(record.website) if record.website else None
+            if parsed and parsed.scheme in {"http", "https"} and parsed.hostname:
+                self.db.entries.update_one(
+                    {"_id": run.entry_id, "website": {"$in": [None, ""]}},
+                    {"$set": {"website": record.website, "updated_at": datetime.now(UTC)}},
+                    **kwargs,
+                )
         return True
 
     def complete_failure(

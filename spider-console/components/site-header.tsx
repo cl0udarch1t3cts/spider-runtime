@@ -47,14 +47,14 @@ export function SiteHeader() {
 
   return (
     <div className="header">
-      <div className="brand">
+      <Link className="brand" href="/">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="Cloud Architects" width={30} height={30} />
         <div>
           <h1>SPAIDER CONSOLE</h1>
           <span className="tagline">Cloud Architects</span>
         </div>
-      </div>
+      </Link>
       <nav className="nav">
         {NAV.map((item) => {
           const active =

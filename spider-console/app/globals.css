@@ -581,3 +581,8 @@ a.action {
 .status.no_website,
 .st-no_website { color: var(--amber); }
 .status-bar .seg.st-no_website { background: var(--amber); }
+
+a.brand {
+  color: inherit;
+  text-decoration: none;
+}
