@@ -277,9 +277,13 @@ export default function OverviewPage() {
                       {task.attempts}/{task.max_attempts}
                     </td>
                     <td>
-                      {task.lease
-                        ? `${task.lease.worker_id} → $<Ago iso={task.lease.expires_at} />`
-                        : "—"}
+                      {task.lease ? (
+                        <>
+                          {task.lease.worker_id} → <Ago iso={task.lease.expires_at} />
+                        </>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td><Ago iso={task.updated_at} /></td>
                   </tr>
