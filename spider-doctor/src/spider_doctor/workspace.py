@@ -122,9 +122,16 @@ class GitWorkspace:
             name = entry[3:]
             path = PurePosixPath(name)
             fixture_allowed = path.parts[:3] == ("tests", "fixtures", entry_id)
+            # Only code and metadata belong in the scraper directory; page
+            # dumps and probe files Hermes leaves there are scratch, not
+            # publishable content (fixtures have tests/fixtures/<entry_id>).
+            scraper_allowed = path.parts[:2] == ("scrapers", entry_id) and path.suffix in {
+                ".py",
+                ".json",
+            }
             allowed = (
                 name in self._GLOBAL_ALLOWED
-                or path.parts[:2] == ("scrapers", entry_id)
+                or scraper_allowed
                 or fixture_allowed
             )
             candidate = workspace / Path(*path.parts)

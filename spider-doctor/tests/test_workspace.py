@@ -65,6 +65,42 @@ def test_discards_untracked_scratch_files_outside_allowlist(tmp_path: Path) -> N
     assert not (fixtures / "other-place_home.html").exists()
 
 
+def test_discards_content_dumps_inside_the_scraper_directory(tmp_path: Path) -> None:
+    # Hermes saves working copies of fetched pages next to the scraper;
+    # only code (.py) and metadata (.json) belong in scrapers/<entry_id>.
+    source, release = origin(tmp_path)
+    manager = GitWorkspace(source, tmp_path / "work")
+    workspace = manager.prepare("task-1", release)
+    scraper = workspace / "scrapers" / "example"
+    (scraper / "new.py").write_text("pass\n")
+    (scraper / "meta.json").write_text("{}\n")
+    (scraper / "angebot.html").write_text("<html>page dump</html>")
+    (scraper / "_write_probe.txt").write_text("probe")
+
+    changed = manager.validate_changes(workspace, "example")
+
+    assert sorted(changed) == ["scrapers/example/meta.json", "scrapers/example/new.py"]
+    assert not (scraper / "angebot.html").exists()
+    assert not (scraper / "_write_probe.txt").exists()
+
+
+def test_rejects_tracked_non_code_changes_inside_the_scraper_directory(tmp_path: Path) -> None:
+    source, release = origin(tmp_path)
+    # A tracked HTML file (from the pre-gate era) that Hermes modifies must
+    # fail validation, not silently publish.
+    scraper = source / "scrapers" / "example"
+    (scraper / "cached.html").write_text("<html>old dump</html>")
+    git(source, "add", ".")
+    git(source, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "dump")
+    release = git(source, "rev-parse", "HEAD")
+    manager = GitWorkspace(source, tmp_path / "work")
+    workspace = manager.prepare("task-1", release)
+    (workspace / "scrapers" / "example" / "cached.html").write_text("<html>edited</html>")
+
+    with pytest.raises(ValueError, match="outside the Doctor allowlist"):
+        manager.validate_changes(workspace, "example")
+
+
 def test_accepts_fixture_directory_scoped_to_entry_id(tmp_path: Path) -> None:
     source, release = origin(tmp_path)
     manager = GitWorkspace(source, tmp_path / "work")
