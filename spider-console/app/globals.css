@@ -617,6 +617,7 @@ a.brand {
   align-items: center;
   gap: 0.6rem;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 h2.panel-head {
