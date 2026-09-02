@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from spider_executor.artifacts import LocalArtifactStore
 from spider_executor.remote_runner import HttpSpiderRunner
@@ -35,14 +36,28 @@ def main() -> None:
             scripts_root, ancestor, descendant
         ),
     )
-    while True:
-        run = worker.process_one()
-        if run is not None:
-            logger.info("processed entry_id=%s run_id=%s status=%s", run.entry_id, run.id, run.status)
-        if args.once:
-            return
-        if run is None:
-            time.sleep(settings.worker_poll_seconds)
+    def loop() -> None:
+        while True:
+            run = worker.process_one()
+            if run is not None:
+                logger.info(
+                    "processed entry_id=%s run_id=%s status=%s", run.entry_id, run.id, run.status
+                )
+            if args.once:
+                return
+            if run is None:
+                time.sleep(settings.worker_poll_seconds)
+
+    concurrency = 1 if args.once else max(1, settings.worker_concurrency)
+    if concurrency == 1:
+        loop()
+        return
+    # Threads only overlap the HTTP wait on the runner; every claim is an
+    # atomic, leased Mongo operation, so slots never share a job.
+    logger.info("worker starting %d concurrent scrape slots", concurrency)
+    with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="scrape") as pool:
+        for _ in range(concurrency):
+            pool.submit(loop)
 
 
 if __name__ == "__main__":

@@ -84,6 +84,10 @@ services:
         SPIDER_EXECUTOR_GID: ${SPIDER_EXECUTOR_GID:-1000}
     command: ["python", "-m", "spider_executor.worker_main"]
     restart: unless-stopped
+    # Horizontal scraping concurrency: job claims are atomic and leased, so
+    # replicas never double-process. Runner capacity bounds real parallelism.
+    deploy:
+      replicas: ${SPIDER_EXECUTOR_WORKERS:-1}
     depends_on:
       mongo-init:
         condition: service_completed_successfully
@@ -97,8 +101,11 @@ services:
       SPIDER_ARTIFACT_ROOT: /srv/spider/artifacts
       SPIDER_SCRIPTS_ROOT: /srv/spider/repositories/spider-scripts
       SPIDER_SCRIPTS_REMOTE_URL: git@github.com:cl0udarch1t3cts/spider-scripts.git
-      SPIDER_WORKER_ID: executor-1
+      # No fixed SPIDER_WORKER_ID: each replica derives executor-<hostname>.
       SPIDER_RUNNER_URL: http://runner:8001
+      # Concurrent scrapes per worker; each run is a capped subprocess in the
+      # runner container, so this is thread-level fan-out, not more containers.
+      SPIDER_WORKER_CONCURRENCY: ${SPIDER_EXECUTOR_WORKER_CONCURRENCY:-10}
     volumes:
       - artifacts:/srv/spider/artifacts
       - ${SPIDER_SCRIPTS_HOST_PATH:-../../spider-scripts}:/srv/spider/repositories/spider-scripts:rw
