@@ -14,6 +14,17 @@ class RecordExpectations(BaseModel):
     allowed_source_hosts: list[str] = Field(default_factory=list)
 
 
+def _host_allowed(host: str, allowed_hosts: list[str]) -> bool:
+    # www vs apex and subdomains of an allowed host's own domain are the same
+    # publisher (www.example.com allows example.com and jobs.example.com);
+    # anything on a foreign registrable domain still needs explicit listing.
+    for allowed in allowed_hosts:
+        base = allowed.lower().removeprefix("www.")
+        if host == allowed.lower() or host == base or host.endswith(f".{base}"):
+            return True
+    return False
+
+
 def validate_record(record: ScrapedRecord, expectations: RecordExpectations) -> ValidationResult:
     errors: list[str] = []
     non_null = 0
@@ -35,9 +46,9 @@ def validate_record(record: ScrapedRecord, expectations: RecordExpectations) -> 
         if parsed.scheme not in {"http", "https"} or not host:
             errors.append(f"field {name} source must be an absolute HTTP(S) URL")
             continue
-        if expectations.allowed_source_hosts and host not in {
-            h.lower() for h in expectations.allowed_source_hosts
-        }:
+        if expectations.allowed_source_hosts and not _host_allowed(
+            host, expectations.allowed_source_hosts
+        ):
             errors.append(f"field {name} source host {host} is not allowed")
     for name in expectations.required_fields:
         field = record.fields.get(name)

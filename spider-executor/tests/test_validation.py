@@ -42,6 +42,34 @@ def test_rejects_relative_or_non_http_provenance() -> None:
     assert "field NAME source must be an absolute HTTP(S) URL" in result.errors
 
 
+def test_accepts_provenance_from_own_domain_variants() -> None:
+    # www vs apex and subdomains of the verified site's own domain are the
+    # same publisher; only foreign domains need explicit allowlisting.
+    for source in (
+        "https://www.example.com/menu",
+        "https://example.com/menu",
+        "https://jobs.example.com/openings",
+    ):
+        result = validate_record(
+            record({"MENU": {"value": "Menu", "source": source}}),
+            RecordExpectations(allowed_source_hosts=["www.example.com"]),
+        )
+        assert result.valid, (source, result.errors)
+
+
+def test_still_rejects_lookalike_and_foreign_domains() -> None:
+    for source in (
+        "https://notexample.com/menu",
+        "https://example.com.evil.ch/menu",
+        "https://cdn.host.ch/menu.pdf",
+    ):
+        result = validate_record(
+            record({"MENU": {"value": "Menu", "source": source}}),
+            RecordExpectations(allowed_source_hosts=["example.com"]),
+        )
+        assert not result.valid, source
+
+
 def test_accepts_undeclared_null_field_for_schema_growth() -> None:
     # The record schema can gain fields (e.g. JOBS) after an entry's contract
     # was activated; such fields arrive null and must not fail existing entries.
