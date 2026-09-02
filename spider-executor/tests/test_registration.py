@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import mongomock
 import pytest
 from pydantic import ValidationError
@@ -245,6 +247,33 @@ def test_scrape_all_enqueues_every_activated_entry_once_per_hour() -> None:
     # Same hour bucket: the sweep is idempotent, no duplicate jobs.
     assert second == {"enqueued": 1, "skipped": 1}
     assert service.db.execution_jobs.count_documents({"entry_id": "ready"}) == 1
+
+
+def test_scrape_failing_enqueues_only_still_failing_entries() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider)
+    now = datetime.now(UTC)
+    for entry_id in ("broken", "healthy"):
+        service.put_entry(
+            Entry(entry_id=entry_id, businessname=entry_id, address="Bern", scraper_release="a" * 40)
+        )
+        service.db.runtime_state.insert_one(
+            {"_id": f"activated_entry:{entry_id}", "entry_id": entry_id, "scraper_release": "a" * 40}
+        )
+    service.db.execution_runs.insert_many(
+        [
+            {"_id": "b:1", "entry_id": "broken", "status": "failed",
+             "failure_class": "SCRAPER_EXCEPTION", "started_at": now},
+            {"_id": "h:1", "entry_id": "healthy", "status": "succeeded", "started_at": now},
+        ]
+    )
+
+    first = service.enqueue_failing(trigger="console")
+    second = service.enqueue_failing(trigger="console")
+
+    assert first == {"enqueued": 1, "skipped": 0}
+    assert second == {"enqueued": 1, "skipped": 0}
+    assert service.db.execution_jobs.count_documents({"entry_id": "broken"}) == 1
+    assert service.db.execution_jobs.count_documents({"entry_id": "healthy"}) == 0
 
 
 def test_operator_can_request_repair_from_a_recorded_run() -> None:

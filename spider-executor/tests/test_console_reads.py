@@ -382,6 +382,19 @@ def test_api_scrape_all_reports_sweep_counts() -> None:
     assert control.sweep_trigger == "console"
 
 
+def test_api_scrape_failed_reports_sweep_counts() -> None:
+    class SweepControl(ConsoleFakeControl):
+        def enqueue_failing(self, trigger: str = "console"):
+            return {"enqueued": 3, "skipped": 1}
+
+    response = TestClient(create_app(SweepControl())).post(
+        "/api/v1/execution-jobs/scrape-failed"
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {"enqueued": 3, "skipped": 1}
+
+
 def test_api_accepts_operator_repair_requests() -> None:
     class RepairControl(ConsoleFakeControl):
         def request_repair(self, run_id: str):

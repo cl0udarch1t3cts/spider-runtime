@@ -455,6 +455,32 @@ class MongoControlService:
                 skipped += 1
         return {"enqueued": enqueued, "skipped": skipped}
 
+    def enqueue_failing(self, trigger: str = "console") -> dict:
+        """Enqueue a fresh run for every entry whose latest run failed.
+
+        Same hour-bucketed idempotency as enqueue_all, under its own key
+        prefix so a targeted retry sweep and a full sweep don't collide.
+        """
+        bucket = datetime.now(UTC).strftime("%Y-%m-%dT%H")
+        enqueued = 0
+        skipped = 0
+        for run in self.list_recent_runs(limit=1000, unresolved=True):
+            entry_id = run.get("entry_id")
+            if not entry_id:
+                continue
+            try:
+                self.enqueue(
+                    ExecutionJob(
+                        entry_id=entry_id,
+                        idempotency_key=f"scrape-failed:{entry_id}:{bucket}",
+                        trigger=trigger,
+                    )
+                )
+                enqueued += 1
+            except RuntimeError:
+                skipped += 1
+        return {"enqueued": enqueued, "skipped": skipped}
+
     def is_entry_release_activated(self, entry_id: str, release: str | None) -> bool:
         entry = self.get_entry(entry_id)
         if entry is None or not entry.scraper_release or release != entry.scraper_release:

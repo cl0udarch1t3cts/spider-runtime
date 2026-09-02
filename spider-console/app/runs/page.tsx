@@ -57,14 +57,14 @@ function RunsView() {
     }
   };
 
-  const scrapeAll = async () => {
-    setRetryNote("enqueueing a full sweep…");
+  const sweep = async (path: string, what: string) => {
+    setRetryNote(`enqueueing ${what}…`);
     try {
-      const response = await fetch("/api/scrape-all", { method: "POST" });
+      const response = await fetch(path, { method: "POST" });
       const body = await response.json().catch(() => null);
       if (response.ok) {
         setRetryNote(
-          `sweep queued: ${Number(body?.enqueued ?? 0)} entries enqueued, ${Number(body?.skipped ?? 0)} without an activated scraper skipped`,
+          `${what} queued: ${Number(body?.enqueued ?? 0)} entries enqueued, ${Number(body?.skipped ?? 0)} skipped`,
         );
       } else {
         setRetryNote(String(body?.detail ?? body?.error ?? `HTTP ${response.status}`));
@@ -154,9 +154,16 @@ function RunsView() {
             <button
               className="action"
               title="Enqueue one run for every entry with an activated scraper (deterministic, no LLM). Repeating within the same hour reuses the existing jobs."
-              onClick={scrapeAll}
+              onClick={() => sweep("/api/scrape-all", "full sweep")}
             >
               scrape all
+            </button>{" "}
+            <button
+              className="action"
+              title="Enqueue a fresh run only for entries whose latest run failed"
+              onClick={() => sweep("/api/scrape-failed", "retry of failing entries")}
+            >
+              scrape failed
             </button>
           </div>
           <span className="muted">

@@ -81,6 +81,26 @@ export async function scrapeAll(): Promise<{
   };
 }
 
+export async function scrapeFailed(): Promise<{
+  ok: boolean;
+  status: number;
+  body: unknown;
+}> {
+  const response = await fetch(
+    `${EXECUTOR_API_URL}/api/v1/execution-jobs/scrape-failed`,
+    {
+      method: "POST",
+      cache: "no-store",
+      signal: AbortSignal.timeout(60_000),
+    },
+  );
+  return {
+    ok: response.ok,
+    status: response.status,
+    body: await response.json().catch(() => null),
+  };
+}
+
 export async function requestRepair(runId: string): Promise<{
   ok: boolean;
   status: number;

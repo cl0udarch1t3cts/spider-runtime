@@ -58,6 +58,9 @@ def test_task_network_is_internal_and_egress_requires_proxy() -> None:
     assert "acl blocked_names dstdomain localhost .local .internal" in squid
     assert ".localhost" not in squid
     assert "pinger_enable off" in squid
+    # Web archives are not extraction sources; scrapers must use live sites.
+    assert "acl archive_sources dstdomain .archive.org" in squid
+    assert "http_access deny archive_sources" in squid
 
 
 def test_dispatcher_mounts_only_required_daemon_paths_at_identical_host_paths() -> None:

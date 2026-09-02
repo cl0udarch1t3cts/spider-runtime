@@ -98,14 +98,14 @@ export default function OverviewPage() {
   const [failingCount, setFailingCount] = useState<number | null>(null);
   const [retryNote, setRetryNote] = useState<string | null>(null);
 
-  const scrapeAll = async () => {
-    setRetryNote("enqueueing a full sweep…");
+  const sweep = async (path: string, what: string) => {
+    setRetryNote(`enqueueing ${what}…`);
     try {
-      const response = await fetch("/api/scrape-all", { method: "POST" });
+      const response = await fetch(path, { method: "POST" });
       const body = await response.json().catch(() => null);
       if (response.ok) {
         setRetryNote(
-          `sweep queued: ${Number(body?.enqueued ?? 0)} entries enqueued, ${Number(body?.skipped ?? 0)} without an activated scraper skipped`,
+          `${what} queued: ${Number(body?.enqueued ?? 0)} entries enqueued, ${Number(body?.skipped ?? 0)} skipped`,
         );
       } else {
         setRetryNote(String(body?.detail ?? body?.error ?? `HTTP ${response.status}`));
@@ -114,6 +114,8 @@ export default function OverviewPage() {
       setRetryNote(String(exc));
     }
   };
+  const scrapeAll = () => sweep("/api/scrape-all", "full sweep");
+  const scrapeFailedSweep = () => sweep("/api/scrape-failed", "retry of failing entries");
 
   const retry = async (entryId: string) => {
     setRetryNote(`enqueueing ${entryId}…`);
@@ -196,6 +198,13 @@ export default function OverviewPage() {
             onClick={scrapeAll}
           >
             scrape all
+          </button>{" "}
+          <button
+            className="action"
+            title="Enqueue a fresh run only for entries whose latest run failed"
+            onClick={scrapeFailedSweep}
+          >
+            scrape failed
           </button>{" "}
           <Link className="more" href="/runs">
             triage →
