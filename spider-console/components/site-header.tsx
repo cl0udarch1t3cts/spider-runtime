@@ -6,11 +6,13 @@ import { useState } from "react";
 import { useOverview } from "@/components/overview-provider";
 import { Ago } from "@/components/ago";
 
+// Scraping is the platform's product; it leads the nav. The Doctor is the
+// repair shop you visit when a scrape breaks.
 const NAV = [
-  { href: "/", label: "Overview" },
+  { href: "/runs", label: "Scraping" },
   { href: "/entries", label: "Entries" },
   { href: "/tasks", label: "Doctor tasks" },
-  { href: "/runs", label: "Scraping" },
+  { href: "/", label: "Overview" },
 ];
 
 export function SiteHeader() {
@@ -71,6 +73,13 @@ export function SiteHeader() {
         })}
       </nav>
       <div className="header-right">
+        <button
+          className="action"
+          title="Reload this view with fresh data (view state is kept in the URL)"
+          onClick={() => window.location.reload()}
+        >
+          ⟳ refresh
+        </button>
         {data?.executor.stats ? (
           <button
             className={`action pause ${shownPaused ? "paused" : ""}`}

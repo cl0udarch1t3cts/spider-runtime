@@ -29,8 +29,11 @@ class Control(Protocol):
 
     def list_entries(self) -> list[dict]: ...
     def list_recent_runs(self, limit: int, unresolved: bool = False) -> list[dict]: ...
-    def list_doctor_tasks(self, limit: int, status: str | None = None) -> list[dict]: ...
+    def list_doctor_tasks(
+        self, limit: int, status: str | None = None, entry_id: str | None = None
+    ) -> list[dict]: ...
     def get_run_log(self, run_id: str) -> dict | None: ...
+    def request_repair(self, run_id: str) -> dict | None: ...
     def stats(self) -> dict: ...
     def doctor_paused(self) -> bool: ...
     def set_doctor_paused(self, paused: bool) -> bool: ...
@@ -107,8 +110,15 @@ class RunView(BaseModel):
     failure_class: str | None = None
     record_id: str | None = None
     errors: list[str] = Field(default_factory=list)
+    failed_attempts: int | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+class RepairRequestView(BaseModel):
+    task_id: str | None = None
+    entry_id: str | None = None
+    status: str | None = None
 
 
 class RunLogView(BaseModel):
@@ -215,6 +225,13 @@ def create_app(control: Control) -> FastAPI:
     ) -> list[dict]:
         return control.list_recent_runs(limit, unresolved)
 
+    @app.post("/api/v1/runs/{run_id}/repair", response_model=RepairRequestView, status_code=202)
+    def request_repair(run_id: str) -> dict:
+        outcome = control.request_repair(run_id)
+        if outcome is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return outcome
+
     @app.get("/api/v1/runs/{run_id}/log", response_model=RunLogView)
     def get_run_log(run_id: str) -> dict:
         log = control.get_run_log(run_id)
@@ -226,8 +243,9 @@ def create_app(control: Control) -> FastAPI:
     def list_doctor_tasks(
         limit: int = Query(default=50, ge=1, le=200),
         status: str | None = Query(default=None, min_length=1, max_length=64),
+        entry_id: str | None = Query(default=None, min_length=1, max_length=128),
     ) -> list[dict]:
-        return control.list_doctor_tasks(limit, status)
+        return control.list_doctor_tasks(limit, status, entry_id)
 
     @app.get("/api/v1/stats", response_model=OverviewStats)
     def overview_stats() -> dict:

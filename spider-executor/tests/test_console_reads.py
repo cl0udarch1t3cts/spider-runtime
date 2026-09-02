@@ -194,11 +194,13 @@ def test_service_lists_only_unresolved_run_failures() -> None:
              "failure_class": "SCRAPER_EXCEPTION", "started_at": now - timedelta(hours=2)},
             {"_id": "a:2", "entry_id": "entry-fixed", "status": "succeeded",
              "started_at": now - timedelta(hours=1)},
-            # still failing: latest run for the entry failed
+            # still failing: latest runs for the entry failed twice in a row
             {"_id": "b:1", "entry_id": "entry-broken", "status": "succeeded",
              "started_at": now - timedelta(hours=2)},
             {"_id": "b:2", "entry_id": "entry-broken", "status": "failed",
              "failure_class": "NETWORK_TIMEOUT", "started_at": now - timedelta(minutes=30)},
+            {"_id": "b:3", "entry_id": "entry-broken", "status": "failed",
+             "failure_class": "NETWORK_TIMEOUT", "started_at": now - timedelta(minutes=10)},
             # healthy entry
             {"_id": "c:1", "entry_id": "entry-ok", "status": "succeeded",
              "started_at": now - timedelta(minutes=10)},
@@ -207,8 +209,10 @@ def test_service_lists_only_unresolved_run_failures() -> None:
 
     unresolved = service.list_recent_runs(limit=50, unresolved=True)
 
-    assert [run["id"] for run in unresolved] == ["b:2"]
+    assert [run["id"] for run in unresolved] == ["b:3"]
     assert unresolved[0]["entry_id"] == "entry-broken"
+    # "amount of tries": consecutive failed runs since the last success
+    assert unresolved[0]["failed_attempts"] == 2
 
 
 def test_service_filters_doctor_tasks_by_status() -> None:
@@ -219,6 +223,14 @@ def test_service_filters_doctor_tasks_by_status() -> None:
 
     assert [task["id"] for task in succeeded] == ["task-old"]
     assert [task["id"] for task in running] == ["task-running"]
+
+
+def test_service_filters_doctor_tasks_by_entry() -> None:
+    service = seeded_service()
+
+    tasks = service.list_doctor_tasks(limit=10, entry_id="entry-0")
+
+    assert [task["id"] for task in tasks] == ["task-old"]
 
 
 def test_service_stats_counts_by_status() -> None:
@@ -274,9 +286,12 @@ class ConsoleFakeControl:
             }
         ]
 
-    def list_doctor_tasks(self, limit: int, status: str | None = None):
+    def list_doctor_tasks(
+        self, limit: int, status: str | None = None, entry_id: str | None = None
+    ):
         self.requested_limits.append(limit)
         self.requested_statuses.append(status)
+        self.requested_entry_ids = [*getattr(self, "requested_entry_ids", []), entry_id]
         return [
             {
                 "id": "task-running",
@@ -339,6 +354,33 @@ def test_api_exposes_console_read_endpoints() -> None:
     assert control.requested_statuses == [None, "queued"]
 
 
+def test_api_passes_entry_filter_to_doctor_task_listing() -> None:
+    control = ConsoleFakeControl()
+    client = TestClient(create_app(control))
+
+    response = client.get("/api/v1/doctor-tasks?entry_id=entry-0")
+
+    assert response.status_code == 200
+    assert control.requested_entry_ids == ["entry-0"]
+
+
+def test_api_accepts_operator_repair_requests() -> None:
+    class RepairControl(ConsoleFakeControl):
+        def request_repair(self, run_id: str):
+            if run_id != "job-0:1":
+                return None
+            return {"task_id": "task-1", "entry_id": "entry-0", "status": "queued"}
+
+    client = TestClient(create_app(RepairControl()))
+
+    accepted = client.post("/api/v1/runs/job-0:1/repair")
+    missing = client.post("/api/v1/runs/other/repair")
+
+    assert accepted.status_code == 202
+    assert accepted.json()["status"] == "queued"
+    assert missing.status_code == 404
+
+
 def test_api_exposes_run_log_and_404s_unknown_runs() -> None:
     client = TestClient(create_app(ConsoleFakeControl()))
 
@@ -352,8 +394,10 @@ def test_api_exposes_run_log_and_404s_unknown_runs() -> None:
 
 def test_api_never_serializes_a_lease_token_even_if_control_leaks_one() -> None:
     class LeakyControl(ConsoleFakeControl):
-        def list_doctor_tasks(self, limit: int, status: str | None = None):
-            tasks = super().list_doctor_tasks(limit, status)
+        def list_doctor_tasks(
+            self, limit: int, status: str | None = None, entry_id: str | None = None
+        ):
+            tasks = super().list_doctor_tasks(limit, status, entry_id)
             tasks[0]["lease"]["token"] = "secret-fencing-token"
             return tasks
 

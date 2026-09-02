@@ -197,8 +197,26 @@ def test_inactive_entry_does_not_run_or_create_doctor_task() -> None:
     assert service.doctor_task_count() == 0
 
 
+def test_failed_run_does_not_auto_refer_to_doctor_while_suspended() -> None:
+    # Operator policy: automatic Doctor care is suspended; broken scrapes
+    # are referred manually via request_repair until further notice.
+    service = make_service()
+    service.put_entry(activated_entry(website="https://example.com"))
+    result = successful_result()
+    result.record.entry_id = "other"
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="suspended"))
+
+    run = ExecutorWorker(service, FakeRunner(result), worker_id="worker-1").process_one()
+
+    assert run.status == JobStatus.FAILED
+    assert service.doctor_task_count() == 0
+    assert service.request_repair(run.id)["status"] == "queued"
+    assert service.doctor_task_count() == 1
+
+
 def test_wrong_record_entry_id_is_identity_failure() -> None:
     service = make_service()
+    service.set_auto_repair(True)
     service.put_entry(activated_entry(website="https://example.com"))
     result = successful_result()
     result.record.entry_id = "other"
@@ -270,6 +288,7 @@ def test_release_mismatch_fails_before_accepting_record() -> None:
 
 def test_semantic_failure_creates_one_doctor_task() -> None:
     service = make_service()
+    service.set_auto_repair(True)
     service.put_entry(
         activated_entry(
             website="https://example.com",
@@ -300,6 +319,7 @@ def test_semantic_failure_creates_one_doctor_task() -> None:
 
 def test_new_failure_does_not_retarget_running_or_reviewable_doctor_task() -> None:
     service = make_service()
+    service.set_auto_repair(True)
     service.put_entry(
         activated_entry(
             website="https://example.com",

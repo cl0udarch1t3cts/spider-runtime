@@ -26,6 +26,7 @@ export interface Run {
   failure_class: string | null;
   record_id: string | null;
   scraper_release: string | null;
+  failed_attempts: number | null;
   started_at: string;
   finished_at: string | null;
 }

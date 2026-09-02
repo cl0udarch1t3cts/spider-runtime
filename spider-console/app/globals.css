@@ -283,7 +283,8 @@ button.link {
   text-decoration: underline;
 }
 
-button.action {
+button.action,
+a.action {
   background: var(--brand);
   border: none;
   border-radius: 5px;
@@ -295,7 +296,8 @@ button.action {
   padding: 0.15rem 0.7rem;
 }
 
-button.action:hover {
+button.action:hover,
+a.action:hover {
   background: var(--brand-light);
 }
 
@@ -499,4 +501,13 @@ tr.clickable:hover td {
 
 .log-tail {
   max-height: 70vh;
+}
+
+td.actions {
+  white-space: nowrap;
+}
+
+a.action {
+  display: inline-block;
+  text-decoration: none;
 }

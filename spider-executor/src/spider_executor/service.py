@@ -545,6 +545,44 @@ class MongoControlService:
         with self._transaction() as session:
             self._upsert_doctor_task(entry_id, run_id, failure_class, errors, session=session)
 
+    def auto_repair_enabled(self) -> bool:
+        # Operator policy: automatic Doctor referral is suspended by default;
+        # broken scrapes are sent manually via request_repair.
+        document = self.db.runtime_state.find_one({"_id": "auto_repair"})
+        return bool(document and document.get("enabled"))
+
+    def set_auto_repair(self, enabled: bool) -> bool:
+        self.db.runtime_state.update_one(
+            {"_id": "auto_repair"}, {"$set": {"enabled": bool(enabled)}}, upsert=True
+        )
+        return bool(enabled)
+
+    def request_repair(self, run_id: str) -> dict | None:
+        """Operator-initiated repair for a recorded run.
+
+        Unlike the worker's automatic path this ignores failure-class
+        gating (a human decided the scrape doesn't work); per-entry
+        dedupe and the bounded repair budget still apply.
+        """
+        run = self.db.execution_runs.find_one({"_id": run_id})
+        if run is None or not run.get("entry_id"):
+            return None
+        entry_id = run["entry_id"]
+        self.ensure_doctor_task(
+            entry_id,
+            run_id,
+            run.get("failure_class") or "OPERATOR_REQUESTED",
+            [str(error) for error in run.get("errors") or []] or ["operator requested repair"],
+        )
+        task = self.db.doctor_tasks.find_one({"active_key": entry_id})
+        if task is None:
+            return {"task_id": None, "entry_id": entry_id, "status": "unknown"}
+        return {
+            "task_id": str(task["_id"]),
+            "entry_id": entry_id,
+            "status": task.get("status"),
+        }
+
     def doctor_task_count(self) -> int:
         return self.db.doctor_tasks.count_documents({})
 
@@ -610,20 +648,36 @@ class MongoControlService:
         ]
 
     def list_recent_runs(self, limit: int = 50, unresolved: bool = False) -> list[dict]:
+        failed_attempts: dict[str, int] = {}
         if unresolved:
             # Latest run per entry, kept only while that latest run is not a
-            # success: a failure a later run already fixed is history.
+            # success: a failure a later run already fixed is history. The
+            # status history yields the consecutive-failure streak ("tries").
             grouped = self.db.execution_runs.aggregate(
                 [
                     {"$match": {"entry_id": {"$type": "string"}}},
                     {"$sort": {"started_at": DESCENDING}},
-                    {"$group": {"_id": "$entry_id", "doc": {"$first": "$$ROOT"}}},
+                    {
+                        "$group": {
+                            "_id": "$entry_id",
+                            "doc": {"$first": "$$ROOT"},
+                            "statuses": {"$push": "$status"},
+                        }
+                    },
                     {"$match": {"doc.status": {"$ne": "succeeded"}}},
                     {"$sort": {"doc.started_at": DESCENDING}},
                     {"$limit": limit},
                 ]
             )
-            documents = [item["doc"] for item in grouped]
+            documents = []
+            for item in grouped:
+                documents.append(item["doc"])
+                streak = 0
+                for status in item["statuses"]:
+                    if status == "succeeded":
+                        break
+                    streak += 1
+                failed_attempts[str(item["doc"]["_id"])] = streak
         else:
             documents = (
                 self.db.execution_runs.find().sort("started_at", DESCENDING).limit(limit)
@@ -640,6 +694,7 @@ class MongoControlService:
                 "failure_class": document.get("failure_class"),
                 "record_id": document.get("record_id"),
                 "errors": [str(error) for error in document.get("errors") or []],
+                "failed_attempts": failed_attempts.get(str(document["_id"])),
                 "started_at": document.get("started_at"),
                 "finished_at": document.get("finished_at"),
             }
@@ -657,9 +712,16 @@ class MongoControlService:
             "log_tail": document.get("log_tail"),
         }
 
-    def list_doctor_tasks(self, limit: int = 50, status: str | None = None) -> list[dict]:
+    def list_doctor_tasks(
+        self,
+        limit: int = 50,
+        status: str | None = None,
+        entry_id: str | None = None,
+    ) -> list[dict]:
         tasks = []
-        query = {"status": status} if status else {}
+        query: dict = {"status": status} if status else {}
+        if entry_id:
+            query["entry_id"] = entry_id
         for document in (
             self.db.doctor_tasks.find(query).sort("updated_at", DESCENDING).limit(limit)
         ):
@@ -820,7 +882,7 @@ class MongoControlService:
             run.errors = errors
             run.finished_at = datetime.now(UTC)
             self.db.execution_runs.replace_one({"_id": run.id}, _encode(run), upsert=True, **kwargs)
-            if failure.doctor_eligible:
+            if failure.doctor_eligible and self.auto_repair_enabled():
                 self._upsert_doctor_task(
                     run.entry_id,
                     run.id,

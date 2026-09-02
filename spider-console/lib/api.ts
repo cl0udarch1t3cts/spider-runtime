@@ -51,11 +51,36 @@ export async function fetchUnresolvedRuns() {
   );
 }
 
-export async function fetchDoctorTasks(status: string | null) {
-  const filter = status ? `&status=${encodeURIComponent(status)}` : "";
+export async function fetchDoctorTasks(
+  status: string | null,
+  entryId: string | null = null,
+) {
+  const filter =
+    (status ? `&status=${encodeURIComponent(status)}` : "") +
+    (entryId ? `&entry_id=${encodeURIComponent(entryId)}` : "");
   return executorGet<Record<string, unknown>[]>(
     `/api/v1/doctor-tasks?limit=200${filter}`,
   );
+}
+
+export async function requestRepair(runId: string): Promise<{
+  ok: boolean;
+  status: number;
+  body: unknown;
+}> {
+  const response = await fetch(
+    `${EXECUTOR_API_URL}/api/v1/runs/${encodeURIComponent(runId)}/repair`,
+    {
+      method: "POST",
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  return {
+    ok: response.ok,
+    status: response.status,
+    body: await response.json().catch(() => null),
+  };
 }
 
 export async function fetchRunLog(runId: string) {

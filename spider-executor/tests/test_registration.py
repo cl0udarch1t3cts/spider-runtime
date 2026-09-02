@@ -227,6 +227,36 @@ def test_repair_budget_persists_across_fresh_tasks_and_requires_human_review() -
     assert service.db.entries.find_one({"_id": "example"})["repair_attempts"] == 2
 
 
+def test_operator_can_request_repair_from_a_recorded_run() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider)
+    service.put_entry(
+        Entry(entry_id="example", businessname="Example", address="Bern", scraper_release="a" * 40)
+    )
+    service.db.execution_runs.insert_one(
+        {
+            "_id": "job-1:1",
+            "entry_id": "example",
+            "status": "failed",
+            "failure_class": "SCRAPER_EXCEPTION",
+            "errors": ["selector missing"],
+        }
+    )
+
+    outcome = service.request_repair("job-1:1")
+
+    assert outcome is not None
+    assert outcome["entry_id"] == "example"
+    assert outcome["status"] == "queued"
+    task = service.db.doctor_tasks.find_one({"active_key": "example"})
+    assert task["type"] == "repair"
+    assert task["source_run_id"] == "job-1:1"
+    assert task["failure_class"] == "SCRAPER_EXCEPTION"
+    # Repeating the request reuses the active task instead of duplicating it.
+    assert service.request_repair("job-1:1")["task_id"] == task["_id"]
+    assert service.db.doctor_tasks.count_documents({"entry_id": "example"}) == 1
+    assert service.request_repair("missing") is None
+
+
 def test_create_task_blocks_simultaneous_repair_for_the_same_entry() -> None:
     service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
     service.ensure_indexes()

@@ -18,7 +18,9 @@ import { replaceParam } from "@/lib/url-state";
 
 function TasksView() {
   const { data, error } = useOverview();
-  const status = useSearchParams().get("status");
+  const search = useSearchParams();
+  const status = search.get("status");
+  const entry = search.get("entry");
   const setStatus = (value: string | null) => replaceParam("status", value);
   const [tasks, setTasks] = useState<DoctorTask[] | null>(null);
   const [tasksError, setTasksError] = useState<string | null>(null);
@@ -32,7 +34,10 @@ function TasksView() {
     setTasks(null);
     const load = async () => {
       try {
-        const query = status ? `?status=${encodeURIComponent(status)}` : "";
+        const params = new URLSearchParams();
+        if (status) params.set("status", status);
+        if (entry) params.set("entry", entry);
+        const query = params.size ? `?${params}` : "";
         const response = await fetch(`/api/tasks${query}`, {
           cache: "no-store",
         });
@@ -56,7 +61,7 @@ function TasksView() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [status]);
+  }, [status, entry]);
 
   if (!data && !tasks) {
     return <p className="muted">loading{error ? ` — ${error}` : "…"}</p>;
@@ -82,6 +87,15 @@ function TasksView() {
                 {name} <span className="chip-count">{count}</span>
               </button>
             ))}
+            {entry ? (
+              <button
+                className="chip active"
+                title="Showing only this entry's tasks; click to clear"
+                onClick={() => replaceParam("entry", null)}
+              >
+                entry: {entry} ✕
+              </button>
+            ) : null}
           </div>
           <span className="muted">
             {tasks
