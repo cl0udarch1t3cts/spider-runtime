@@ -216,3 +216,49 @@ def test_accepts_unstaged_modification_of_tracked_scraper(tmp_path: Path) -> Non
     )
 
     assert manager.validate_changes(workspace, "example") == ["scrapers/example/scrape.py"]
+
+
+def test_concurrent_candidates_merge_shared_tracking_files(tmp_path: Path) -> None:
+    from spider_doctor.publisher import TrustedGitPublisher
+
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "--bare", "-q", str(remote))
+    git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+    seed = tmp_path / "seed"
+    git(tmp_path, "clone", "-q", str(remote), str(seed))
+    (seed / "AGENTS.md").write_text("rules\n")
+    (seed / "PROGRESS.md").write_text("# Progress\n- base note\n")
+    (seed / "registry.json").write_text('{\n  "schema_version": 1,\n  "entries": []\n}\n')
+    git(seed, "add", ".")
+    git(seed, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "base")
+    git(seed, "push", "-q", "origin", "HEAD:main")
+    release = git(seed, "rev-parse", "HEAD")
+    manager = GitWorkspace(seed, tmp_path / "work")
+    publisher = TrustedGitPublisher(branch="main", author_name="Doctor", author_email="d@example.com")
+
+    def build(task_id: str, entry_id: str) -> tuple[Path, str]:
+        workspace = manager.prepare(task_id, release)
+        scraper = workspace / "scrapers" / entry_id
+        scraper.mkdir(parents=True, exist_ok=True)
+        (scraper / "scrape.py").write_text("pass\n")
+        progress = workspace / "PROGRESS.md"
+        progress.write_text(progress.read_text() + f"- {entry_id} done\n")
+        registry = workspace / "registry.json"
+        registry.write_text(
+            '{\n  "schema_version": 1,\n  "entries": [{"entry_id": "%s"}]\n}\n' % entry_id
+        )
+        changed = manager.validate_changes(workspace, entry_id)
+        return workspace, publisher.create_candidate(workspace, changed, f"create {entry_id}")
+
+    ws_a, candidate_a = build("task-a", "EntryA")
+    ws_b, candidate_b = build("task-b", "EntryB")
+    publisher.publish(ws_a, candidate_a)
+    published_b = publisher.publish(ws_b, candidate_b)
+
+    assert git(remote, "rev-parse", "refs/heads/main") == published_b
+    progress = git(remote, "show", "main:PROGRESS.md")
+    assert "- EntryA done" in progress and "- EntryB done" in progress
+    import json
+
+    registry = json.loads(git(remote, "show", "main:registry.json"))
+    assert {e["entry_id"] for e in registry["entries"]} == {"EntryA", "EntryB"}

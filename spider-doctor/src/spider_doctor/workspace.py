@@ -5,6 +5,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path, PurePosixPath
 from typing import ClassVar
 
@@ -79,6 +80,20 @@ class GitWorkspace:
         # Lazy blob fetches (checkout below, later rebases while origin is
         # still the local path) need the same permissive upload-pack.
         self._run(workspace, "config", "remote.origin.uploadpack", permissive_upload_pack)
+        # Concurrent tasks all append to the shared tracking files; make
+        # publication rebases merge them instead of conflicting. Workspace-local
+        # config only — nothing is committed to the repository.
+        (workspace / ".git" / "info").mkdir(parents=True, exist_ok=True)
+        (workspace / ".git" / "info" / "attributes").write_text(
+            "PROGRESS.md merge=union\nregistry.json merge=registryentries\n"
+        )
+        self._run(workspace, "config", "merge.registryentries.name", "registry entry union")
+        self._run(
+            workspace,
+            "config",
+            "merge.registryentries.driver",
+            f"{sys.executable} -m spider_doctor.merge_registry %O %A %B",
+        )
         # Checkout while origin still points at the local source so the
         # release's blobs come from disk, not the network.
         self._run(workspace, "checkout", "--quiet", "--detach", release)
