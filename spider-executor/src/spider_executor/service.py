@@ -709,6 +709,8 @@ class MongoControlService:
             "id": str(document["_id"]),
             "entry_id": document.get("entry_id"),
             "status": document.get("status"),
+            "failure_class": document.get("failure_class"),
+            "errors": [str(error) for error in document.get("errors") or []],
             "log_tail": document.get("log_tail"),
         }
 

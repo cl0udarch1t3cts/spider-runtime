@@ -168,6 +168,8 @@ def test_service_returns_run_log_by_run_id() -> None:
             "_id": "job-9:1",
             "entry_id": "entry-9",
             "status": "succeeded",
+            "failure_class": "SEMANTIC_VALIDATION_FAILURE",
+            "errors": ["field MENU source host is not allowed"],
             "log_tail": "fetched 3 pages\n",
         }
     )
@@ -178,6 +180,8 @@ def test_service_returns_run_log_by_run_id() -> None:
         "id": "job-9:1",
         "entry_id": "entry-9",
         "status": "succeeded",
+        "failure_class": "SEMANTIC_VALIDATION_FAILURE",
+        "errors": ["field MENU source host is not allowed"],
         "log_tail": "fetched 3 pages\n",
     }
     assert service.get_run_log("missing") is None

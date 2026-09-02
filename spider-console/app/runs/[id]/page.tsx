@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 
@@ -9,12 +9,15 @@ interface RunLog {
   id: string;
   entry_id: string | null;
   status: string | null;
+  failure_class: string | null;
+  errors: string[];
   log_tail: string | null;
 }
 
 export default function RunLogPage() {
   const params = useParams<{ id: string }>();
   const runId = decodeURIComponent(params.id);
+  const router = useRouter();
   const [data, setData] = useState<RunLog | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -28,10 +31,10 @@ export default function RunLogPage() {
         body: JSON.stringify({ entryId }),
       });
       const body = await response.json().catch(() => null);
-      if (response.ok) {
-        setNote(
-          `job ${String(body?.id ?? "").slice(0, 12)} queued — the fresh run gets its own log page`,
-        );
+      if (response.ok && body?.id) {
+        // A fresh console job runs as attempt 1, so its run id is knowable
+        // before the worker even starts it; the log page waits for it.
+        router.push(`/runs/${encodeURIComponent(`${String(body.id)}:1`)}`);
       } else {
         setNote(String(body?.detail ?? body?.error ?? `HTTP ${response.status}`));
       }
@@ -42,6 +45,8 @@ export default function RunLogPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setData(null);
+    setError(null);
     const load = async () => {
       try {
         const response = await fetch(`/api/run-log/${encodeURIComponent(runId)}`, {
@@ -60,8 +65,12 @@ export default function RunLogPage() {
       }
     };
     load();
+    // Keep polling: a just-enqueued run materializes once the worker picks
+    // it up, and a running one grows its log until it finishes.
+    const timer = setInterval(load, 5000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [runId]);
 
@@ -106,15 +115,35 @@ export default function RunLogPage() {
           ) : null}
         </p>
         {note ? <p className="note">{note}</p> : null}
-        {error ? <p className="error">{error}</p> : null}
+        {error ? (
+          /returned 404/.test(error) ? (
+            <p className="muted">waiting for the worker to start this run…</p>
+          ) : (
+            <p className="error">{error}</p>
+          )
+        ) : null}
         {!data && !error ? <p className="muted">loading…</p> : null}
+        {data?.failure_class || data?.errors?.length ? (
+          <>
+            <h3 className="log-section">
+              failure{data.failure_class ? `: ${data.failure_class}` : ""}
+            </h3>
+            <pre className="transcript-body log-tail errors">
+              {data.errors.length ? data.errors.join("\n\n") : "no error details recorded"}
+            </pre>
+          </>
+        ) : null}
         {data ? (
           data.log_tail ? (
-            <pre className="transcript-body log-tail">{data.log_tail}</pre>
+            <>
+              <h3 className="log-section">scraper log</h3>
+              <pre className="transcript-body log-tail">{data.log_tail}</pre>
+            </>
           ) : (
             <p className="muted">
-              this run recorded no log output (runs before the log-capture
-              deploy, or a scraper that wrote nothing to stderr)
+              {data.failure_class || data.errors?.length
+                ? "the scraper itself wrote no log output — the failure above was recorded by the executor (validation, classification), not by the script"
+                : "this run recorded no log output (runs before the log-capture deploy, or a scraper that wrote nothing to stderr)"}
             </p>
           )
         ) : null}

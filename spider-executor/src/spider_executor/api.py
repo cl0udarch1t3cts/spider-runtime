@@ -125,6 +125,8 @@ class RunLogView(BaseModel):
     id: str
     entry_id: str | None = None
     status: str | None = None
+    failure_class: str | None = None
+    errors: list[str] = Field(default_factory=list)
     log_tail: str | None = None
 
 

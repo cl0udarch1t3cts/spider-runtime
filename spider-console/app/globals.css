@@ -562,3 +562,16 @@ a.action {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+.log-section {
+  margin: 0.8rem 0 0.3rem;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.transcript-body.errors {
+  color: var(--red);
+  max-height: 18rem;
+}
