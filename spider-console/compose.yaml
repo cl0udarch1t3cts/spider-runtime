@@ -17,8 +17,12 @@ services:
       USAGE_TOKEN_FILE: /run/secrets/proxy-token
       BUDGET_DAILY_PERCENT: ${SPIDER_DOCTOR_BUDGET_DAILY_PERCENT:-10}
       BUDGET_RESERVE_PERCENT: ${SPIDER_DOCTOR_BUDGET_RESERVE_PERCENT:-30}
+      DOCTOR_TASKS_DIR: /data/doctor-tasks
     volumes:
       - ${SPIDER_DOCTOR_HOST_ROOT:?set the absolute Doctor checkout path}/data/proxy-token:/run/secrets/proxy-token:ro
+      # Credential-free per-task Hermes homes (transcripts); never the
+      # broker-hermes OAuth volume.
+      - ${SPIDER_DOCTOR_HOST_ROOT:?set the absolute Doctor checkout path}/data/tasks:/data/doctor-tasks:ro
     networks:
       - executor-control
       - doctor-uplink

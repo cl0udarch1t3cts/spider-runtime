@@ -463,3 +463,36 @@ tr.clickable:hover td {
 .budget-editor {
   white-space: nowrap;
 }
+
+.transcript-message {
+  margin: 0.6rem 0;
+  border-left: 2px solid var(--border, #444);
+  padding-left: 0.6rem;
+}
+
+.transcript-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+}
+
+.transcript-role {
+  font-weight: 600;
+}
+
+.role-assistant {
+  color: #7aa2f7;
+}
+
+.role-tool {
+  color: #9ece6a;
+}
+
+.transcript-body {
+  margin: 0.2rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 24rem;
+  overflow-y: auto;
+  font-size: 0.78rem;
+}

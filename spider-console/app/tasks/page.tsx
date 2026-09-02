@@ -120,7 +120,15 @@ function TasksView() {
                       "—"
                     )}
                   </td>
-                  <td>{task.type}</td>
+                  <td>
+                    <Link
+                      className="link"
+                      title="Open the Hermes transcript for this task"
+                      href={`/tasks/${encodeURIComponent(task.id)}`}
+                    >
+                      {task.type}
+                    </Link>
+                  </td>
                   <td>
                     <StatusBadge value={task.status} />
                     {isLive(task) ? " ●" : ""}
