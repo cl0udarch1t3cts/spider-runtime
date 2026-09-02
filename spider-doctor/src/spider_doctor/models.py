@@ -19,6 +19,9 @@ class DoctorStatus(StrEnum):
     FAILED = "failed"
     EXHAUSTED = "exhausted"
     SUCCEEDED = "succeeded"
+    # Terminal finding, not an error: no trustworthy website exists for the
+    # business, so retrying would only burn subscription budget.
+    NO_WEBSITE = "no_website"
 
 
 class Lease(BaseModel):
@@ -67,6 +70,16 @@ class DoctorResult(BaseModel):
     # candidate persistence, and publication.
     status: Literal[DoctorStatus.AWAITING_REVIEW, DoctorStatus.FAILED]
     summary: str
+    resolution: Literal["no_reliable_website"] | None = Field(
+        default=None,
+        description=(
+            "Set together with status=failed when, after a genuine search, no "
+            "trustworthy official website for the registered business can be "
+            "identified and verified (do NOT substitute archives, social "
+            "profiles, or directories). The task then ends terminally instead "
+            "of being retried."
+        ),
+    )
     changed_files: list[AgentChangedPath] = Field(default_factory=list)
     tests: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)

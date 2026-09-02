@@ -575,3 +575,9 @@ a.action {
   color: var(--red);
   max-height: 18rem;
 }
+
+/* no_website is a terminal finding (no trustworthy site exists), styled as
+   a warning rather than an error. */
+.status.no_website,
+.st-no_website { color: var(--amber); }
+.status-bar .seg.st-no_website { background: var(--amber); }

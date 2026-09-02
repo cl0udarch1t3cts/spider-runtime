@@ -11,6 +11,11 @@ class FakeRepository:
         self.candidate = None
         self.published = None
         self.failed = None
+        self.no_website = None
+
+    def resolve_no_website(self, task_id, lease_token, summary):
+        self.no_website = (task_id, lease_token, summary)
+        return True
 
     def claim(self, worker_id: str, lease_for: timedelta):
         return self.task
@@ -245,6 +250,38 @@ def test_structured_agent_failure_uses_bounded_retry_path(tmp_path: Path) -> Non
     assert result.status == DoctorStatus.FAILED
     assert repository.candidate is None
     assert repository.failed[0:2] == ("task-1", "token")
+
+
+def test_no_reliable_website_ends_the_task_without_retry(tmp_path: Path) -> None:
+    class NoWebsiteLauncher:
+        def run(self, task, *, workspace, task_file, output_dir):
+            return DoctorResult(
+                status=DoctorStatus.FAILED,
+                summary="no official website for this business could be verified",
+                resolution="no_reliable_website",
+            )
+
+    repository = FakeRepository(running_task())
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        NoWebsiteLauncher(),
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+    )
+
+    result = worker.process_one()
+
+    assert result.status == DoctorStatus.FAILED
+    assert repository.no_website == (
+        "task-1",
+        "token",
+        "no official website for this business could be verified",
+    )
+    # A terminal finding, not an error: the bounded-retry path is not used.
+    assert repository.failed is None
 
 
 def test_agent_result_schema_exposes_only_untrusted_terminal_statuses() -> None:

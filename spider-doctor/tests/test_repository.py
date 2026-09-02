@@ -250,3 +250,25 @@ def test_release_refuses_a_lost_lease() -> None:
 
     assert not repo.release(claimed.id, "stale-token")
     assert collection.find_one({"_id": "deferred"})["status"] == "running"
+
+
+def test_resolve_no_website_is_terminal_fenced_and_unclaimable() -> None:
+    collection = mongomock.MongoClient().spider.doctor_tasks
+    collection.insert_one(queued_task("task-1"))
+    repo = MongoDoctorTaskRepository(collection)
+    claimed = repo.claim("doctor-1", lease_for=timedelta(minutes=5))
+
+    resolved = repo.resolve_no_website(
+        claimed.id, claimed.lease.token, "no official website could be verified"
+    )
+
+    assert resolved is True
+    stored = collection.find_one({"_id": "task-1"})
+    assert stored["status"] == "no_website"
+    assert stored["lease"] is None
+    assert stored.get("last_error") is None
+    assert "active_key" not in stored
+    assert stored["result"]["resolution"] == "no_reliable_website"
+    # Terminal: nothing left to claim, and a stale token cannot resolve again.
+    assert repo.claim("doctor-1") is None
+    assert repo.resolve_no_website("task-1", "wrong-token", "x") is False

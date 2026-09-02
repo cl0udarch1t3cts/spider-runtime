@@ -289,6 +289,42 @@ class MongoDoctorTaskRepository:
         )
         return outcome.modified_count == 1
 
+    def resolve_no_website(
+        self,
+        task_id: str,
+        lease_token: str,
+        summary: str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Terminal, fenced resolution: no trustworthy website exists.
+
+        A finding rather than a failure — no retry budget is consumed,
+        last_error stays empty, and the task becomes unclaimable.
+        """
+        now = now or datetime.now(UTC)
+        outcome = self.collection.update_one(
+            {
+                "_id": task_id,
+                "status": str(DoctorStatus.RUNNING),
+                "lease.token": lease_token,
+                "lease.expires_at": {"$gt": now},
+            },
+            {
+                "$set": {
+                    "status": str(DoctorStatus.NO_WEBSITE),
+                    "lease": None,
+                    "result": {
+                        "resolution": "no_reliable_website",
+                        "summary": summary[:2000],
+                    },
+                    "updated_at": now,
+                },
+                "$unset": {"active_key": ""},
+            },
+        )
+        return outcome.modified_count == 1
+
     def fail_attempt(
         self,
         task_id: str,

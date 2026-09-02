@@ -140,6 +140,7 @@ const STATUS_ORDER = [
   "succeeded",
   "failed",
   "exhausted",
+  "no_website",
   "human_review_required",
 ];
 

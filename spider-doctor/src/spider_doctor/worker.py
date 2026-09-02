@@ -34,6 +34,7 @@ class Repository(Protocol):
         attempts: int,
         max_attempts: int,
     ) -> DoctorStatus | None: ...
+    def resolve_no_website(self, task_id: str, lease_token: str, summary: str) -> bool: ...
 
 
 class EvidenceLoader(Protocol):
@@ -178,6 +179,19 @@ class DoctorWorker:
                 **result.metadata,
                 "hermes_seconds": round(time.monotonic() - hermes_started, 1),
             }
+            if result.status == DoctorStatus.FAILED and result.resolution == "no_reliable_website":
+                # A finding, not a failure: end the task terminally without
+                # consuming retry budget.
+                if not self.repository.resolve_no_website(
+                    task.id, task.lease.token, result.summary
+                ):
+                    raise RuntimeError("Doctor task lease was lost before no-website resolution")
+                logger.info(
+                    "Doctor task=%s resolved terminally: no reliable website (%s)",
+                    task.id,
+                    result.summary[:200],
+                )
+                return result
             if result.status == DoctorStatus.FAILED:
                 detail = "; ".join(result.errors) or result.summary
                 raise RuntimeError(f"Hermes reported failure: {detail}")
