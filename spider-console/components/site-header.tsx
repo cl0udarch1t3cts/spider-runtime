@@ -10,7 +10,7 @@ const NAV = [
   { href: "/", label: "Overview" },
   { href: "/entries", label: "Entries" },
   { href: "/tasks", label: "Doctor tasks" },
-  { href: "/runs", label: "Runs" },
+  { href: "/runs", label: "Scraping" },
 ];
 
 export function SiteHeader() {
