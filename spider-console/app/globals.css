@@ -520,3 +520,45 @@ a.action {
   gap: 1rem;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
 }
+
+/* Status palette usable outside badges (count values, bar segments). */
+.st-succeeded { color: var(--green); }
+.st-running { color: var(--blue); }
+.st-queued { color: var(--amber); }
+.st-failed,
+.st-exhausted,
+.st-human_review_required { color: var(--red); }
+
+.status-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.7rem;
+  background: var(--border);
+}
+
+.status-bar .seg { min-width: 2px; }
+.status-bar .seg.st-succeeded { background: var(--green); }
+.status-bar .seg.st-running { background: var(--blue); }
+.status-bar .seg.st-queued { background: var(--amber); }
+.status-bar .seg.st-failed,
+.status-bar .seg.st-exhausted,
+.status-bar .seg.st-human_review_required { background: var(--red); }
+
+.progress-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.progress-lines .label {
+  display: inline-block;
+  min-width: 5.2rem;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

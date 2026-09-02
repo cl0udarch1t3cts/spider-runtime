@@ -285,66 +285,103 @@ export default function OverviewPage() {
       </section>
 
       <section className="panel">
-        <h2>Doctor tasks</h2>
+        <h2>
+          Doctor tasks{" "}
+          <Link className="more" href="/tasks">
+            all →
+          </Link>
+        </h2>
         {executor.error ? (
           <p className="error">{executor.error}</p>
         ) : stats ? (
-          <div className="counts">
-            <div className="count">
-              <div className="value">{live.length}</div>
-              <div className="label">live tasks</div>
+          <>
+            <div
+              className="status-bar"
+              title="Share of Doctor tasks by status"
+            >
+              {sortedStatusCounts(stats.doctor_tasks).map(([status, count]) => (
+                <div
+                  key={status}
+                  className={`seg st-${status}`}
+                  style={{ flexGrow: count }}
+                  title={`${status.replace(/_/g, " ")}: ${count}`}
+                />
+              ))}
             </div>
-            {sortedStatusCounts(stats.doctor_tasks).map(([status, count]) => (
-              <Link
-                className="count"
-                key={status}
-                href={`/tasks?status=${encodeURIComponent(status)}`}
-              >
-                <div className="value">{count}</div>
-                <div className="label">tasks {status}</div>
-              </Link>
-            ))}
-          </div>
+            <div className="counts">
+              <div className="count">
+                <div className={`value ${live.length ? "st-running" : ""}`}>
+                  {live.length}
+                </div>
+                <div className="label">working now</div>
+              </div>
+              {sortedStatusCounts(stats.doctor_tasks).map(([status, count]) => (
+                <Link
+                  className="count"
+                  key={status}
+                  href={`/tasks?status=${encodeURIComponent(status)}`}
+                >
+                  <div className={`value st-${status}`}>{count}</div>
+                  <div className="label">{status.replace(/_/g, " ")}</div>
+                </Link>
+              ))}
+            </div>
+          </>
         ) : null}
       </section>
 
       {stats?.doctor_throughput ? (
         <section className="panel">
           <h2>Doctor progress</h2>
-          <div className="counts">
-            <div className="count">
-              <div className="value">{stats.doctor_throughput.succeeded_1h}</div>
-              <div className="label">succeeded / 1h</div>
-            </div>
-            <div className="count">
-              <div className="value">{stats.doctor_throughput.succeeded_24h}</div>
-              <div className="label">succeeded / 24h</div>
-            </div>
-            <div className="count">
-              <div className="value">{stats.doctor_throughput.finished_1h}</div>
-              <div className="label">finished / 1h</div>
-            </div>
-            <div className="count">
-              <div className="value">{stats.doctor_throughput.finished_24h}</div>
-              <div className="label">finished / 24h</div>
-            </div>
-          </div>
-          <p className="muted">
-            {(() => {
-              const queued = stats.doctor_tasks["queued"] ?? 0;
-              const rate = stats.doctor_throughput.finished_1h;
-              if (!queued) return "queue is empty";
-              if (!rate) return `${queued} queued · no tasks finished in the last hour`;
-              const hours = queued / rate;
-              const eta =
-                hours >= 48
-                  ? `~${Math.round(hours / 24)}d`
+          {(() => {
+            const t = stats.doctor_throughput;
+            const line = (succeeded: number, finished: number) => {
+              if (!finished) return "no attempts finished";
+              const pct = Math.round((100 * succeeded) / finished);
+              return (
+                <>
+                  <b className={succeeded ? "st-succeeded" : "st-failed"}>
+                    {succeeded}
+                  </b>{" "}
+                  scraper{succeeded === 1 ? "" : "s"} built of{" "}
+                  <b>{finished}</b> attempt{finished === 1 ? "" : "s"} ({pct}%
+                  success)
+                </>
+              );
+            };
+            const queued = stats.doctor_tasks["queued"] ?? 0;
+            const rate = t.finished_1h;
+            const hours = rate ? queued / rate : null;
+            const eta =
+              hours === null
+                ? null
+                : hours >= 48
+                  ? `~${Math.round(hours / 24)} days`
                   : hours >= 1.5
-                    ? `~${Math.round(hours)}h`
-                    : `~${Math.max(1, Math.round(hours * 60))}m`;
-              return `${queued} queued · ${eta} to drain at the last hour's pace`;
-            })()}
-          </p>
+                    ? `~${Math.round(hours)} hours`
+                    : `~${Math.max(1, Math.round(hours * 60))} minutes`;
+            return (
+              <ul className="progress-lines">
+                <li>
+                  <span className="label">last hour</span> {line(t.succeeded_1h, t.finished_1h)}
+                </li>
+                <li>
+                  <span className="label">last 24h</span> {line(t.succeeded_24h, t.finished_24h)}
+                </li>
+                <li>
+                  <span className="label">queue</span>{" "}
+                  {queued === 0 ? (
+                    "empty"
+                  ) : (
+                    <>
+                      <b className="st-queued">{queued}</b> waiting
+                      {eta ? ` · drained in ${eta} at the last hour's pace` : " · no attempts finished in the last hour"}
+                    </>
+                  )}
+                </li>
+              </ul>
+            );
+          })()}
         </section>
       ) : null}
       </div>
