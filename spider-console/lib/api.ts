@@ -58,6 +58,12 @@ export async function fetchDoctorTasks(status: string | null) {
   );
 }
 
+export async function fetchRunLog(runId: string) {
+  return executorGet<Record<string, unknown>>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/log`,
+  );
+}
+
 export async function fetchEntryRuns(entryId: string) {
   return executorGet<Record<string, unknown>[]>(
     `/api/v1/entries/${encodeURIComponent(entryId)}/runs`,

@@ -235,7 +235,15 @@ function EntryDetailView() {
               <tbody>
                 {runs.map((run) => (
                   <tr key={run.id}>
-                    <td>{run.id.slice(0, 12)}</td>
+                    <td>
+                      <Link
+                        className="link"
+                        title="Open this run's scraper log"
+                        href={`/runs/${encodeURIComponent(run.id)}`}
+                      >
+                        {run.id.slice(0, 12)}
+                      </Link>
+                    </td>
                     <td>
                       <StatusBadge value={run.status} />
                     </td>

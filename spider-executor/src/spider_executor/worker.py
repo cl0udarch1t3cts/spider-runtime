@@ -11,6 +11,10 @@ from spider_executor.models import ExecutionRun, FailureClass, JobStatus, Runner
 from spider_executor.validation import RecordExpectations, validate_record
 
 
+# Bounded scraper-log excerpt kept on each run document.
+LOG_TAIL_CHARS = 16_384
+
+
 class Runner(Protocol):
     def run(self, entry_id: str, run_id: str) -> RunnerResult: ...
 
@@ -79,6 +83,7 @@ class ExecutorWorker:
             )
 
         result = self.runner.run(job.entry_id, run_id)
+        run.log_tail = result.stderr[-LOG_TAIL_CHARS:] if result.stderr else None
         if self.artifacts is not None:
             try:
                 content = json.dumps(result.record.model_dump(mode="json"), indent=2).encode()

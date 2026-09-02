@@ -78,6 +78,35 @@ def test_worker_persists_successful_run_and_record() -> None:
     assert service.doctor_task_count() == 0
 
 
+def test_worker_persists_bounded_stderr_log_tail_on_success_and_failure() -> None:
+    service = make_service()
+    service.put_entry(
+        activated_entry(
+            website="https://example.com",
+            validation={"required_fields": ["NAME"], "minimum_non_null_fields": 1},
+        )
+    )
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="one"))
+    result = successful_result()
+    result.stderr = "warning: slow fetch\n" + ("x" * 20_000)
+    worker = ExecutorWorker(service, FakeRunner(result), worker_id="worker-1")
+
+    run = worker.process_one()
+
+    stored = service.db.execution_runs.find_one({"_id": run.id})
+    assert stored["log_tail"] == result.stderr[-16_384:]
+
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="two"))
+    failing = successful_result()
+    failing.exit_code = 3
+    failing.stderr = "Traceback: boom"
+    failing.record.errors = ["Traceback: boom"]
+    failed_run = ExecutorWorker(service, FakeRunner(failing), worker_id="worker-1").process_one()
+
+    stored = service.db.execution_runs.find_one({"_id": failed_run.id})
+    assert stored["log_tail"] == "Traceback: boom"
+
+
 def test_post_doctor_handoff_job_executes_registered_entry_without_website() -> None:
     release = "a" * 40
     service = MongoControlService(

@@ -646,6 +646,17 @@ class MongoControlService:
             for document in documents
         ]
 
+    def get_run_log(self, run_id: str) -> dict | None:
+        document = self.db.execution_runs.find_one({"_id": run_id})
+        if document is None:
+            return None
+        return {
+            "id": str(document["_id"]),
+            "entry_id": document.get("entry_id"),
+            "status": document.get("status"),
+            "log_tail": document.get("log_tail"),
+        }
+
     def list_doctor_tasks(self, limit: int = 50, status: str | None = None) -> list[dict]:
         tasks = []
         query = {"status": status} if status else {}

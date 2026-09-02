@@ -30,6 +30,7 @@ class Control(Protocol):
     def list_entries(self) -> list[dict]: ...
     def list_recent_runs(self, limit: int, unresolved: bool = False) -> list[dict]: ...
     def list_doctor_tasks(self, limit: int, status: str | None = None) -> list[dict]: ...
+    def get_run_log(self, run_id: str) -> dict | None: ...
     def stats(self) -> dict: ...
     def doctor_paused(self) -> bool: ...
     def set_doctor_paused(self, paused: bool) -> bool: ...
@@ -108,6 +109,13 @@ class RunView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+class RunLogView(BaseModel):
+    id: str
+    entry_id: str | None = None
+    status: str | None = None
+    log_tail: str | None = None
 
 
 class OverviewStats(BaseModel):
@@ -206,6 +214,13 @@ def create_app(control: Control) -> FastAPI:
         unresolved: bool = Query(default=False),
     ) -> list[dict]:
         return control.list_recent_runs(limit, unresolved)
+
+    @app.get("/api/v1/runs/{run_id}/log", response_model=RunLogView)
+    def get_run_log(run_id: str) -> dict:
+        log = control.get_run_log(run_id)
+        if log is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return log
 
     @app.get("/api/v1/doctor-tasks", response_model=list[DoctorTaskView])
     def list_doctor_tasks(

@@ -496,3 +496,7 @@ tr.clickable:hover td {
   overflow-y: auto;
   font-size: 0.78rem;
 }
+
+.log-tail {
+  max-height: 70vh;
+}

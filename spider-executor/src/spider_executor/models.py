@@ -141,5 +141,6 @@ class ExecutionRun(BaseModel):
     failure_class: FailureClass | None = None
     record_id: str | None = None
     errors: list[str] = Field(default_factory=list)
+    log_tail: str | None = None
     started_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None

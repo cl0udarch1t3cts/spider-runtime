@@ -160,6 +160,29 @@ def test_service_exposes_generation_durations_from_task_result_metadata() -> Non
     assert running["hermes_seconds"] is None
 
 
+def test_service_returns_run_log_by_run_id() -> None:
+    db = mongomock.MongoClient().spider
+    service = MongoControlService(db)
+    db.execution_runs.insert_one(
+        {
+            "_id": "job-9:1",
+            "entry_id": "entry-9",
+            "status": "succeeded",
+            "log_tail": "fetched 3 pages\n",
+        }
+    )
+
+    log = service.get_run_log("job-9:1")
+
+    assert log == {
+        "id": "job-9:1",
+        "entry_id": "entry-9",
+        "status": "succeeded",
+        "log_tail": "fetched 3 pages\n",
+    }
+    assert service.get_run_log("missing") is None
+
+
 def test_service_lists_only_unresolved_run_failures() -> None:
     db = mongomock.MongoClient().spider
     service = MongoControlService(db)
@@ -278,6 +301,17 @@ class ConsoleFakeControl:
             "execution_runs": {"succeeded": 1},
         }
 
+    def get_run_log(self, run_id: str):
+        self.requested_run_logs = [*getattr(self, "requested_run_logs", []), run_id]
+        if run_id != "job-0:1":
+            return None
+        return {
+            "id": "job-0:1",
+            "entry_id": "entry-0",
+            "status": "succeeded",
+            "log_tail": "fetched 3 pages\n",
+        }
+
 
 def test_api_exposes_console_read_endpoints() -> None:
     control = ConsoleFakeControl()
@@ -303,6 +337,17 @@ def test_api_exposes_console_read_endpoints() -> None:
     assert stats.json()["doctor_tasks"] == {"running": 1}
     assert control.requested_limits == [5, 5, 7, 7]
     assert control.requested_statuses == [None, "queued"]
+
+
+def test_api_exposes_run_log_and_404s_unknown_runs() -> None:
+    client = TestClient(create_app(ConsoleFakeControl()))
+
+    found = client.get("/api/v1/runs/job-0:1/log")
+    missing = client.get("/api/v1/runs/other/log")
+
+    assert found.status_code == 200
+    assert found.json()["log_tail"] == "fetched 3 pages\n"
+    assert missing.status_code == 404
 
 
 def test_api_never_serializes_a_lease_token_even_if_control_leaks_one() -> None:
