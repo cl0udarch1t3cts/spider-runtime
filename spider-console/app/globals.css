@@ -618,3 +618,13 @@ a.brand {
   gap: 0.6rem;
   flex-shrink: 0;
 }
+
+h2.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+h2.panel-head .spacer {
+  flex: 1;
+}

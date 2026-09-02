@@ -190,22 +190,23 @@ export default function OverviewPage() {
   return (
     <div className="grid">
       <section className="panel wide">
-        <h2>
-          Scraping{" "}
-          <button
-            className="action"
-            title="Enqueue one run for every entry with an activated scraper (deterministic, no LLM). Repeating within the same hour reuses the existing jobs."
-            onClick={scrapeAll}
-          >
-            scrape all
-          </button>{" "}
+        <h2 className="panel-head">
+          Scraping
+          <span className="spacer" />
           <button
             className="action"
             title="Enqueue a fresh run only for entries whose latest run failed"
             onClick={scrapeFailedSweep}
           >
             scrape failed
-          </button>{" "}
+          </button>
+          <button
+            className="action"
+            title="Enqueue one run for every entry with an activated scraper (deterministic, no LLM). Repeating within the same hour reuses the existing jobs."
+            onClick={scrapeAll}
+          >
+            scrape all
+          </button>
           <Link className="more" href="/runs">
             triage →
           </Link>
