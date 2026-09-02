@@ -227,7 +227,7 @@ export default function OverviewPage() {
               title="Entries whose most recent run failed and no run has succeeded since"
             >
               <div className="value">{failingCount ?? "…"}</div>
-              <div className="label">still failing</div>
+              <div className="label">failed</div>
             </Link>
             <Link className="count" href="/runs?filter=succeeded">
               <div className="value">{stats.execution_runs?.["succeeded"] ?? 0}</div>

@@ -14,7 +14,7 @@ type Filter = "all" | "succeeded" | "failing";
 const FILTERS: { key: Filter; label: string; hint: string }[] = [
   {
     key: "failing",
-    label: "still failing",
+    label: "failed",
     hint: "Entries whose most recent run failed and no run has succeeded since. Failures a later run already fixed are not shown",
   },
   { key: "all", label: "all", hint: "Latest runs, newest first" },
@@ -156,7 +156,7 @@ function RunsView() {
             <span className="muted">
               {filter === "failing"
                 ? failing
-                  ? `${failing.length} entries still failing`
+                  ? `${failing.length} entries failed`
                   : "loading…"
                 : `latest ${rows.length} shown`}
             </span>
