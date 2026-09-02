@@ -11,7 +11,7 @@ WAIT         := --wait --wait-timeout 180
 
 .DEFAULT_GOAL := help
 
-.PHONY: help status health usage reauth console console-down console-logs \
+.PHONY: help status health usage reauth conversation console console-down console-logs \
 	up start-doctor stop stop-doctor stop-doctor-stack \
 	stop-executor-apps down restart-doctor restart-worker restart-api \
 	restart-runner restart-mongo restart-all pull update update-doctor \
@@ -40,6 +40,9 @@ console-down: ## Stop the console
 
 console-logs: ## Recent console logs
 	cd $(CONSOLE_DIR) && docker compose --env-file $(DOCTOR_DIR)/.env logs --no-color --since=10m
+
+conversation: ## Show a Doctor task's Hermes transcript: make conversation TASK=<id> (omit TASK to list recent)
+	@python3 $(DOCTOR_DIR)/scripts/doctor-conversation.py $(TASK)
 
 usage: ## Show current subscription usage via the broker (budget gate source)
 	@cd $(DOCTOR_DIR) && docker compose exec doctor python3 -c 'import os, json, urllib.request; \
