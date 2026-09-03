@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     task_root: Path = Path("./data/tasks")
     hermes_home: Path = Path("./data/hermes")
     hermes_image: str | None = None
+    # The subscription-priced model served by the codex upstream; policy-routed
+    # alternatives (ADR-008) are not budget-gated.
+    model: str = "gpt-5.4"
     proxy_token_file: Path | None = None
     docker_binary: str = "docker"
     docker_network: str = "spider-doctor-egress"

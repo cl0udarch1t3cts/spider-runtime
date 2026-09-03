@@ -204,3 +204,67 @@ def test_task_usage_counts_directories_and_directory_symlinks(tmp_path: Path) ->
     _, entries = launcher._task_usage(root)
 
     assert entries > 10
+
+
+def test_run_writes_model_override_into_the_task_home_config(tmp_path: Path) -> None:
+    import yaml
+
+    home, workspace, task_file, output = make_inputs(tmp_path)
+    (home / "config.yaml").write_text(
+        "model:\n  default: gpt-5.4\n  provider: custom:doctor-codex\n"
+        "providers:\n  doctor-codex:\n    api: http://spider-doctor-broker:8645/v1\n"
+    )
+    fake = executable(
+        tmp_path,
+        "import json\nprint(json.dumps({'status':'awaiting_review','summary':'ok','changed_files':[],'tests':[],'errors':[]}))\n",
+    )
+    launcher = DockerHermesLauncher(
+        LauncherConfig(
+            image=DIGEST,
+            hermes_home=home,
+            docker_binary=str(fake),
+            timeout_seconds=5,
+            verify_network_policy=False,
+        )
+    )
+
+    launcher.run(
+        task(),
+        workspace=workspace,
+        task_file=task_file,
+        output_dir=output,
+        model="qwen3-coder:free",
+        provider="doctor-openrouter",
+    )
+
+    task_config = yaml.safe_load((task_file.parent / "hermes-home" / "config.yaml").read_text())
+    assert task_config["model"]["default"] == "qwen3-coder:free"
+    assert task_config["model"]["provider"] == "custom:doctor-openrouter"
+    # The shared template must stay untouched.
+    template = yaml.safe_load((home / "config.yaml").read_text())
+    assert template["model"]["default"] == "gpt-5.4"
+
+
+def test_run_without_model_override_copies_config_verbatim(tmp_path: Path) -> None:
+    import yaml
+
+    home, workspace, task_file, output = make_inputs(tmp_path)
+    (home / "config.yaml").write_text("model:\n  default: gpt-5.4\n")
+    fake = executable(
+        tmp_path,
+        "import json\nprint(json.dumps({'status':'awaiting_review','summary':'ok','changed_files':[],'tests':[],'errors':[]}))\n",
+    )
+    launcher = DockerHermesLauncher(
+        LauncherConfig(
+            image=DIGEST,
+            hermes_home=home,
+            docker_binary=str(fake),
+            timeout_seconds=5,
+            verify_network_policy=False,
+        )
+    )
+
+    launcher.run(task(), workspace=workspace, task_file=task_file, output_dir=output)
+
+    task_config = yaml.safe_load((task_file.parent / "hermes-home" / "config.yaml").read_text())
+    assert task_config == {"model": {"default": "gpt-5.4"}}

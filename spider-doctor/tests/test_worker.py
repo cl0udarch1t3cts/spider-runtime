@@ -54,7 +54,7 @@ class FakeWorkspace:
 
 
 class FakeLauncher:
-    def run(self, task, *, workspace, task_file, output_dir):
+    def run(self, task, *, workspace, task_file, output_dir, **_kwargs):
         return DoctorResult(
             status=DoctorStatus.AWAITING_REVIEW,
             summary="fixed",
@@ -179,7 +179,7 @@ def test_success_records_generation_durations_in_result_metadata(tmp_path: Path)
 
 def test_failure_error_carries_attempt_duration(tmp_path: Path) -> None:
     class FailedLauncher:
-        def run(self, task, *, workspace, task_file, output_dir):
+        def run(self, task, *, workspace, task_file, output_dir, **_kwargs):
             return DoctorResult(
                 status=DoctorStatus.FAILED,
                 summary="could not reproduce",
@@ -227,7 +227,7 @@ def test_operational_failure_is_fenced_and_requeued(tmp_path: Path) -> None:
 
 def test_structured_agent_failure_uses_bounded_retry_path(tmp_path: Path) -> None:
     class FailedLauncher:
-        def run(self, task, *, workspace, task_file, output_dir):
+        def run(self, task, *, workspace, task_file, output_dir, **_kwargs):
             return DoctorResult(
                 status=DoctorStatus.FAILED,
                 summary="could not reproduce",
@@ -254,7 +254,7 @@ def test_structured_agent_failure_uses_bounded_retry_path(tmp_path: Path) -> Non
 
 def test_no_reliable_website_ends_the_task_without_retry(tmp_path: Path) -> None:
     class NoWebsiteLauncher:
-        def run(self, task, *, workspace, task_file, output_dir):
+        def run(self, task, *, workspace, task_file, output_dir, **_kwargs):
             return DoctorResult(
                 status=DoctorStatus.FAILED,
                 summary="no official website for this business could be verified",
@@ -306,7 +306,7 @@ class FakeBudgetGate:
 
 
 class MustNotLaunch:
-    def run(self, task, *, workspace, task_file, output_dir):
+    def run(self, task, *, workspace, task_file, output_dir, **_kwargs):
         raise AssertionError("Hermes must not be launched while over budget")
 
 
@@ -426,3 +426,126 @@ def test_pause_check_false_processes_normally(tmp_path: Path) -> None:
 
     assert result.status == DoctorStatus.AWAITING_REVIEW
     assert repository.published is not None
+
+
+class RecordingLauncher(FakeLauncher):
+    def __init__(self) -> None:
+        self.kwargs = None
+
+    def run(self, task, *, workspace, task_file, output_dir, **kwargs):
+        self.kwargs = kwargs
+        return super().run(
+            task, workspace=workspace, task_file=task_file, output_dir=output_dir
+        )
+
+
+class DeferGate:
+    def __init__(self) -> None:
+        self.checks = 0
+
+    def check(self):
+        self.checks += 1
+        from spider_doctor.budget import BudgetDecision
+
+        return BudgetDecision(False, "over budget")
+
+
+def test_policy_model_reaches_launcher_and_skips_budget_gate(tmp_path: Path) -> None:
+    repository = FakeRepository(running_task())
+    launcher = RecordingLauncher()
+    gate = DeferGate()
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        launcher,
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+        budget_gate=gate,
+        model_policy=lambda: {"rules": [{"attempt": 1, "model": "qwen3-coder:free"}]},
+    )
+
+    result = worker.process_one()
+
+    assert result is not None
+    assert launcher.kwargs == {"model": "qwen3-coder:free", "provider": "doctor-openrouter"}
+    # A non-codex model never consults the subscription budget gate.
+    assert gate.checks == 0
+    assert result.metadata["model"] == "qwen3-coder:free"
+
+
+def test_budget_defer_falls_back_to_policy_fallback_model(tmp_path: Path) -> None:
+    repository = FakeRepository(running_task())
+    launcher = RecordingLauncher()
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        launcher,
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+        budget_gate=DeferGate(),
+        model_policy=lambda: {"budget_fallback_model": "deepseek-r1:free"},
+    )
+
+    result = worker.process_one()
+
+    assert result is not None
+    assert launcher.kwargs == {"model": "deepseek-r1:free", "provider": "doctor-openrouter"}
+    assert result.metadata["model"] == "deepseek-r1:free"
+
+
+def test_budget_defer_without_fallback_still_releases(tmp_path: Path) -> None:
+    class ReleasingRepository(FakeRepository):
+        def __init__(self, task) -> None:
+            super().__init__(task)
+            self.released = None
+
+        def release(self, task_id, lease_token, retry_after):
+            self.released = (task_id, lease_token)
+            return True
+
+    repository = ReleasingRepository(running_task())
+    launcher = RecordingLauncher()
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        launcher,
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+        budget_gate=DeferGate(),
+        model_policy=dict,
+    )
+
+    result = worker.process_one()
+
+    assert result is None
+    assert repository.released == ("task-1", "token")
+    assert launcher.kwargs is None
+
+
+def test_broken_policy_provider_degrades_to_codex_model(tmp_path: Path) -> None:
+    def broken_policy():
+        raise RuntimeError("mongo unavailable")
+
+    repository = FakeRepository(running_task())
+    launcher = RecordingLauncher()
+    worker = DoctorWorker(
+        repository,
+        FakeEvidence(),
+        FakeWorkspace(tmp_path / "workspace"),
+        launcher,
+        FakePublisher(),
+        worker_id="doctor-1",
+        task_root=tmp_path / "tasks",
+        model_policy=broken_policy,
+    )
+
+    result = worker.process_one()
+
+    assert result is not None
+    assert launcher.kwargs == {"model": "gpt-5.4", "provider": "doctor-codex"}

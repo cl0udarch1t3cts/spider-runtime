@@ -69,6 +69,11 @@ def create_worker(settings: Settings) -> DoctorWorker:
         control = db.runtime_state.find_one({"_id": "doctor_control"})
         return bool(control and control.get("paused"))
 
+    def model_policy() -> dict | None:
+        # Console-editable per-attempt model routing (ADR-008); the worker
+        # degrades to the configured codex model when this is absent or broken.
+        return db.runtime_state.find_one({"_id": "model_policy"})
+
     return DoctorWorker(
         repository,
         MongoEvidenceLoader(db),
@@ -96,6 +101,8 @@ def create_worker(settings: Settings) -> DoctorWorker:
         budget_gate=budget_gate,
         budget_retry_after=timedelta(minutes=settings.budget_retry_minutes),
         pause_check=doctor_paused,
+        model_policy=model_policy,
+        codex_model=settings.model,
     )
 
 

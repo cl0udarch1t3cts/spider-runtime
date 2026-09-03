@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Protocol
 
 from spider_doctor.budget import BudgetDecision
+from spider_doctor.model_policy import budget_fallback, resolve_model
 from spider_doctor.models import DoctorResult, DoctorStatus, DoctorTask
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,16 @@ class Workspace(Protocol):
 
 class Launcher(Protocol):
     def reconcile_orphans(self) -> None: ...
-    def run(self, task: DoctorTask, *, workspace: Path, task_file: Path, output_dir: Path) -> DoctorResult: ...
+    def run(
+        self,
+        task: DoctorTask,
+        *,
+        workspace: Path,
+        task_file: Path,
+        output_dir: Path,
+        model: str | None = None,
+        provider: str | None = None,
+    ) -> DoctorResult: ...
 
 
 class Publisher(Protocol):
@@ -76,6 +86,8 @@ class DoctorWorker:
         budget_gate: BudgetGate | None = None,
         budget_retry_after: timedelta = timedelta(minutes=30),
         pause_check: Callable[[], bool] | None = None,
+        model_policy: Callable[[], dict | None] | None = None,
+        codex_model: str = "gpt-5.4",
     ) -> None:
         self.repository = repository
         self.evidence_loader = evidence_loader
@@ -92,6 +104,17 @@ class DoctorWorker:
         self._publish_lock = threading.Lock()
         self.pause_check = pause_check
         self._pause_logged = False
+        self.model_policy = model_policy
+        self.codex_model = codex_model
+
+    def _policy_document(self) -> dict | None:
+        if self.model_policy is None:
+            return None
+        try:
+            return self.model_policy()
+        except Exception as exc:  # noqa: BLE001 - a policy outage must not stall repairs
+            logger.warning("model policy unavailable, using codex model: %s", exc)
+            return None
 
     def _paused(self) -> bool:
         if self.pause_check is None:
@@ -114,23 +137,53 @@ class DoctorWorker:
         if task.lease is None:
             raise RuntimeError("claimed Doctor task has no lease")
 
+        policy = self._policy_document()
+        choice = resolve_model(
+            policy, task_id=task.id, attempt=task.attempts, codex_model=self.codex_model
+        )
         # Publishing an already-persisted candidate spends no subscription
-        # budget, so only a fresh Hermes launch consults the gate.
-        if task.candidate_sha is None and self.budget_gate is not None:
+        # budget, and non-codex models are not subscription-priced, so only a
+        # fresh codex-routed Hermes launch consults the gate.
+        if task.candidate_sha is None and self.budget_gate is not None and choice.budget_gated:
             decision = self.budget_gate.check()
             if not decision.allowed:
-                released = self.repository.release(
-                    task.id, task.lease.token, retry_after=self.budget_retry_after
-                )
-                logger.warning(
-                    "Doctor budget defer task=%s retry_in=%s released=%s: %s",
-                    task.id,
-                    self.budget_retry_after,
-                    released,
-                    decision.detail,
-                )
-                return None
-            logger.info("Doctor budget proceed task=%s: %s", task.id, decision.detail)
+                fallback = budget_fallback(policy)
+                if fallback and fallback != choice.model:
+                    logger.warning(
+                        "Doctor budget fallback task=%s: %s -> %s (%s)",
+                        task.id,
+                        choice.model,
+                        fallback,
+                        decision.detail,
+                    )
+                    choice = resolve_model(
+                        {"default_model": fallback},
+                        task_id=task.id,
+                        attempt=task.attempts,
+                        codex_model=self.codex_model,
+                    )
+                else:
+                    released = self.repository.release(
+                        task.id, task.lease.token, retry_after=self.budget_retry_after
+                    )
+                    logger.warning(
+                        "Doctor budget defer task=%s retry_in=%s released=%s: %s",
+                        task.id,
+                        self.budget_retry_after,
+                        released,
+                        decision.detail,
+                    )
+                    return None
+            else:
+                logger.info("Doctor budget proceed task=%s: %s", task.id, decision.detail)
+        logger.info(
+            "Doctor model task=%s attempt=%s model=%s provider=%s (%s)",
+            task.id,
+            task.attempts,
+            choice.model,
+            choice.provider,
+            choice.reason,
+        )
 
         attempt_started = time.monotonic()
         try:
@@ -174,10 +227,13 @@ class DoctorWorker:
                 workspace=workspace,
                 task_file=task_file,
                 output_dir=output_dir,
+                model=choice.model,
+                provider=choice.provider,
             )
             result.metadata = {
                 **result.metadata,
                 "hermes_seconds": round(time.monotonic() - hermes_started, 1),
+                "model": choice.model,
             }
             if result.status == DoctorStatus.FAILED and result.resolution == "no_reliable_website":
                 # A finding, not a failure: end the task terminally without

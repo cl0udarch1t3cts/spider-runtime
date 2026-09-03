@@ -43,6 +43,11 @@ services:
       SPIDER_BROKER_REQUESTS_PER_MINUTE: ${SPIDER_BROKER_REQUESTS_PER_MINUTE:-20}
       # Must be at least SPIDER_DOCTOR_MAX_PARALLEL_TASKS.
       SPIDER_BROKER_MAX_CONCURRENT: ${SPIDER_DOCTOR_MAX_PARALLEL_TASKS:-2}
+      # Optional multi-provider registry (ADR-008); both files live in the
+      # broker volume and are simply absent until the operator creates them.
+      SPIDER_BROKER_MODELS_FILE: /opt/data/models.json
+      SPIDER_BROKER_OPENROUTER_KEY_FILE: /opt/data/openrouter-key
+      SPIDER_BROKER_OPENROUTER_REQUESTS_PER_MINUTE: ${SPIDER_BROKER_OPENROUTER_REQUESTS_PER_MINUTE:-15}
     volumes:
       - ${SPIDER_DOCTOR_HOST_ROOT:?set the absolute Doctor checkout path}/data/broker-hermes:/opt/data:rw
       - ${SPIDER_DOCTOR_HOST_ROOT}/data/proxy-token:/run/secrets/proxy-token:ro

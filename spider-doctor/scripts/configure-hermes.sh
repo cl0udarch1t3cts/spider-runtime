@@ -48,6 +48,11 @@ run_task_hermes() {
 
 run_task_hermes config set providers.doctor-codex.api http://spider-doctor-broker:8645/v1
 run_task_hermes config set providers.doctor-codex.transport codex_responses
+# Second broker-fronted provider for policy-routed models (ADR-008): same
+# broker endpoint and client token, plain OpenAI chat/completions transport.
+run_task_hermes config set providers.doctor-openrouter.api http://spider-doctor-broker:8645/v1
+run_task_hermes config set providers.doctor-openrouter.transport chat_completions
+run_task_hermes config set providers.doctor-openrouter.key_cmd 'cat /task/proxy-token'
 run_task_hermes config set providers.doctor-codex.key_cmd 'cat /task/proxy-token'
 run_task_hermes config set providers.doctor-codex.default_model "${SPIDER_DOCTOR_MODEL:-gpt-5.4}"
 run_task_hermes config set model.provider custom:doctor-codex

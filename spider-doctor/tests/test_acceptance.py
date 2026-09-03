@@ -16,7 +16,7 @@ def git(cwd: Path, *args: str) -> str:
 
 
 class RepairingAgent:
-    def run(self, task, *, workspace, task_file, output_dir):
+    def run(self, task, *, workspace, task_file, output_dir, **_kwargs):
         scraper = workspace / "scrapers" / task.entry_id
         scraper.mkdir(parents=True)
         (scraper / "scrape.py").write_text("def scrape(record, ctx):\n    pass\n")

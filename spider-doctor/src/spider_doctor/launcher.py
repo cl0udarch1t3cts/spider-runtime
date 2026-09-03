@@ -271,7 +271,9 @@ class DockerHermesLauncher:
             for index, item in enumerate(value):
                 DockerHermesLauncher._reject_embedded_credentials(item, f"{path}[{index}]")
 
-    def _prepare_task_home(self, task_file: Path) -> Path:
+    def _prepare_task_home(
+        self, task_file: Path, *, model: str | None = None, provider: str | None = None
+    ) -> Path:
         for credential_name in (".env", "auth.json"):
             credential_file = self.config.hermes_home / credential_name
             if credential_file.exists() and credential_file.stat().st_size:
@@ -293,6 +295,16 @@ class DockerHermesLauncher:
         task_home.mkdir()
         if config_file.is_file():
             shutil.copy2(config_file, task_home / "config.yaml")
+            if model or provider:
+                # Per-attempt model routing (ADR-008): rewrite only the copy;
+                # the shared template stays as configure-hermes.sh seeded it.
+                task_config = yaml.safe_load((task_home / "config.yaml").read_text()) or {}
+                model_section = task_config.setdefault("model", {})
+                if model:
+                    model_section["default"] = model
+                if provider:
+                    model_section["provider"] = f"custom:{provider}"
+                (task_home / "config.yaml").write_text(yaml.safe_dump(task_config))
         return task_home
 
     def _verify_network(self) -> None:
@@ -325,6 +337,8 @@ class DockerHermesLauncher:
         task_file: Path,
         output_dir: Path,
         max_output_bytes: int = 2 * 1024 * 1024,
+        model: str | None = None,
+        provider: str | None = None,
     ) -> DoctorResult:
         for directory in (self.config.hermes_home, workspace, output_dir):
             if not directory.is_dir():
@@ -334,7 +348,7 @@ class DockerHermesLauncher:
         result_file = output_dir / "result.json"
         result_file.unlink(missing_ok=True)
         self._verify_network()
-        task_home = self._prepare_task_home(task_file)
+        task_home = self._prepare_task_home(task_file, model=model, provider=provider)
         initial_bytes, initial_files = self._task_usage(workspace, output_dir, task_home)
         if (
             initial_bytes > self.config.max_task_storage_bytes
