@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { sha, type Run, runDuration } from "@/lib/types";
 import { replaceParam } from "@/lib/url-state";
 
-type Filter = "all" | "succeeded" | "failing";
+type Filter = "all" | "running" | "succeeded" | "failing";
 
 const FILTERS: { key: Filter; label: string; hint: string }[] = [
   {
@@ -18,6 +18,7 @@ const FILTERS: { key: Filter; label: string; hint: string }[] = [
     hint: "Entries whose most recent run failed and no run has succeeded since. Failures a later run already fixed are not shown",
   },
   { key: "all", label: "all", hint: "Latest runs, newest first" },
+  { key: "running", label: "running", hint: "Runs executing right now" },
   { key: "succeeded", label: "succeeded", hint: "Latest successful runs" },
 ];
 
@@ -127,6 +128,8 @@ function RunsView() {
   const recent = useMemo(() => data?.executor.runs ?? [], [data]);
   const rows = useMemo(() => {
     if (filter === "failing") return failing ?? [];
+    if (filter === "running")
+      return recent.filter((run) => run.status === "running");
     if (filter === "succeeded")
       return recent.filter((run) => run.status === "succeeded");
     return recent;
