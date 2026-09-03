@@ -135,7 +135,9 @@ flowchart TB
         CA[Codex adapter]
         CB[Codex broker]
         EP[Egress proxy]
-        SB[Scraper builder/repairer]
+        subgraph Hermes[Hermes task container — disposable, one per task]
+            SB[Scraper builder/repairer]
+        end
         VF[Verifier]
         GP[Git publisher]
     end
@@ -166,9 +168,11 @@ flowchart TB
     RE --> WEB
 ```
 
-The Codex broker and the egress proxy are the two boundary components of the
-Doctor's task sandbox: the builder/repairer (the Hermes task container) reaches
-the model only through the broker and the web only through the egress proxy.
+The scraper builder/repairer is the stock Hermes task container, launched
+disposably per task by the Codex adapter (part of the trusted dispatcher).
+The Codex broker and the egress proxy are the two boundary components of its
+sandbox: the Hermes container reaches the model only through the broker and
+the web only through the egress proxy, and holds no credentials of its own.
 
 ### 5.2 `spider-executor`
 
@@ -418,7 +422,7 @@ flowchart LR
     subgraph Runtime[Spider runtime environment]
         E[spider-executor]
         D[Spider Doctor]
-        C[Codex CLI]
+        C[Hermes task container / Codex CLI]
         B[Codex broker]
         P[Egress proxy]
         R[(spider-scripts checkout)]
