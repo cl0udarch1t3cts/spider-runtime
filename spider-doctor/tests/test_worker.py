@@ -28,6 +28,10 @@ class FakeRepository:
         self.published = (task_id, lease_token, candidate_sha)
         return True
 
+    def record_model(self, task_id, lease_token, model):
+        self.model = (task_id, model)
+        return True
+
     def fail_attempt(self, task_id, lease_token, error, **kwargs):
         self.failed = (task_id, lease_token, error)
         return DoctorStatus.QUEUED

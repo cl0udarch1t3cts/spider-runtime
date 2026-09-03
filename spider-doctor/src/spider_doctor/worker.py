@@ -35,6 +35,7 @@ class Repository(Protocol):
         attempts: int,
         max_attempts: int,
     ) -> DoctorStatus | None: ...
+    def record_model(self, task_id: str, lease_token: str, model: str) -> bool: ...
     def resolve_no_website(self, task_id: str, lease_token: str, summary: str) -> bool: ...
 
 
@@ -184,6 +185,7 @@ class DoctorWorker:
             choice.provider,
             choice.reason,
         )
+        self.repository.record_model(task.id, task.lease.token, choice.model)
 
         attempt_started = time.monotonic()
         try:

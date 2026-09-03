@@ -112,6 +112,7 @@ function TasksView() {
                 <th>type</th>
                 <th>status</th>
                 <th>att</th>
+                <th title="Model that ran (or is running) the latest attempt">model</th>
                 <th>worker / lease</th>
                 <th title="How long the current attempt has been running, or how long the recorded attempt took (claim to verified candidate)">duration</th>
                 <th>candidate</th>
@@ -150,6 +151,7 @@ function TasksView() {
                   <td>
                     {task.attempts}/{task.max_attempts}
                   </td>
+                  <td className="muted">{task.model ?? "—"}</td>
                   <td>
                     {task.lease ? (
                       <>

@@ -96,6 +96,7 @@ class DoctorTaskView(BaseModel):
     failure_class: str | None = None
     last_error: str | None = None
     candidate_sha: str | None = None
+    model: str | None = None
     attempt_seconds: float | None = None
     hermes_seconds: float | None = None
     available_at: datetime | None = None

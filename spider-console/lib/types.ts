@@ -13,6 +13,7 @@ export interface DoctorTask {
   failure_class: string | null;
   last_error: string | null;
   candidate_sha: string | null;
+  model: string | null;
   attempt_seconds: number | null;
   hermes_seconds: number | null;
   updated_at: string | null;

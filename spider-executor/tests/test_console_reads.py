@@ -79,6 +79,7 @@ def seeded_service() -> MongoControlService:
                 "attempts": 1,
                 "max_attempts": 2,
                 "failure_class": None,
+                "model": "qwen3-coder:free",
                 "last_error": "previous attempt failed",
                 "lease": {
                     "worker_id": "doctor-1",
@@ -177,6 +178,8 @@ def test_service_lists_doctor_tasks_newest_first_without_lease_token() -> None:
     assert running["lease"]["worker_id"] == "doctor-1"
     assert "token" not in running["lease"]
     assert running["last_error"] == "previous attempt failed"
+    assert running["model"] == "qwen3-coder:free"
+    assert tasks[1]["model"] is None
 
 
 def test_service_exposes_generation_durations_from_task_result_metadata() -> None:

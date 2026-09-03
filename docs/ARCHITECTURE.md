@@ -589,6 +589,28 @@ Production records from Doctor's test executions are discarded. Only executor wr
 
 **Rationale:** MongoDB is the production data store, and a second output repository creates duplication and synchronization risk.
 
+### ADR-008: Multi-provider model routing behind the single broker
+
+**Decision:** The Codex broker may serve additional upstream providers
+(currently OpenRouter) through an operator-maintained model registry, and the
+Doctor selects the model per task attempt from a console-editable
+`model_policy` document (attempt rules, deterministic weighted split, or a
+default; plus an optional budget-fallback model used when the subscription
+gate defers).
+
+**Rationale:** The subscription budget pacing can stall the queue for hours;
+cheap or free alternative models keep creation work draining without spending
+the subscription, and per-attempt routing lets a retry use a different model
+than the failed attempt.
+
+**Consequence:** This supersedes the "exactly one allowed model" clause of
+ADR-006, while preserving its spirit: the broker remains the single auditable
+chokepoint, requests are validated against an explicit model allowlist,
+upstream credentials (Codex OAuth, OpenRouter key) live only in the broker
+volume, and the task container still holds nothing but the broker-local
+client token. Only codex-routed attempts consult the subscription budget
+gate; each attempt's model is stamped on the Doctor task for audit.
+
 ## 10. Quality Requirements
 
 ### 10.1 Quality scenarios

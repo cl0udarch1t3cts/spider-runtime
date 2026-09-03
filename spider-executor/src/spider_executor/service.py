@@ -807,6 +807,7 @@ class MongoControlService:
                     "failure_class": document.get("failure_class"),
                     "last_error": document.get("last_error"),
                     "candidate_sha": document.get("candidate_sha"),
+                    "model": document.get("model"),
                     "attempt_seconds": metadata.get("attempt_seconds"),
                     "hermes_seconds": metadata.get("hermes_seconds"),
                     "available_at": document.get("available_at"),

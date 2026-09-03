@@ -272,3 +272,17 @@ def test_resolve_no_website_is_terminal_fenced_and_unclaimable() -> None:
     # Terminal: nothing left to claim, and a stale token cannot resolve again.
     assert repo.claim("doctor-1") is None
     assert repo.resolve_no_website("task-1", "wrong-token", "x") is False
+
+
+def test_record_model_stamps_the_attempt_model_under_a_valid_lease() -> None:
+    collection = mongomock.MongoClient().spider.doctor_tasks
+    repo = MongoDoctorTaskRepository(collection)
+    collection.insert_one(queued_task("task-1"))
+    task = repo.claim("doctor-1")
+
+    assert repo.record_model(task.id, task.lease.token, "qwen3-coder:free") is True
+    assert collection.find_one({"_id": "task-1"})["model"] == "qwen3-coder:free"
+
+    # A stale lease must not overwrite the stamp.
+    assert repo.record_model(task.id, "wrong-token", "gpt-5.4") is False
+    assert collection.find_one({"_id": "task-1"})["model"] == "qwen3-coder:free"
