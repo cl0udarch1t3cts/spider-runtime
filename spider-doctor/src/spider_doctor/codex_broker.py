@@ -37,6 +37,14 @@ class BrokerSettings:
     max_concurrent_requests: int = 2
     requests_per_minute: int = 20
     max_request_bytes: int = 2 * 1024 * 1024
+    # Optional multi-provider registry: public model name -> {"upstream":
+    # "codex"|"openrouter", "upstream_model": optional rewrite}. Absent, the
+    # broker behaves exactly as before: allowed_model, codex only (ADR-008).
+    model_registry: dict[str, dict[str, str]] | None = None
+    openrouter_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_requests_per_minute: int = 15
+    openrouter_max_concurrent: int = 2
 
     def __post_init__(self) -> None:
         if not self.client_token.strip():
@@ -45,6 +53,16 @@ class BrokerSettings:
             raise ValueError("broker allowed model is required")
         if self.max_concurrent_requests < 1 or self.requests_per_minute < 1:
             raise ValueError("broker limits must be positive")
+        if self.openrouter_max_concurrent < 1 or self.openrouter_requests_per_minute < 1:
+            raise ValueError("broker limits must be positive")
+        for name, entry in (self.model_registry or {}).items():
+            if not isinstance(entry, dict) or entry.get("upstream") not in ("codex", "openrouter"):
+                raise ValueError(f"model registry entry {name!r} needs upstream codex or openrouter")
+            if entry["upstream"] == "openrouter" and not (self.openrouter_key or "").strip():
+                raise ValueError(f"model registry entry {name!r} routes to openrouter but no key is configured")
+
+    def models(self) -> dict[str, dict[str, str]]:
+        return self.model_registry or {self.allowed_model: {"upstream": "codex"}}
 
 
 class RateWindow:
@@ -184,6 +202,8 @@ def create_app(
 ) -> Starlette:
     concurrency = asyncio.Semaphore(settings.max_concurrent_requests)
     rate = RateWindow(settings.requests_per_minute)
+    openrouter_concurrency = asyncio.Semaphore(settings.openrouter_max_concurrent)
+    openrouter_rate = RateWindow(settings.openrouter_requests_per_minute)
 
     @asynccontextmanager
     async def lifespan(app: Starlette):
@@ -209,26 +229,37 @@ def create_app(
             return JSONResponse({"status": "oauth unavailable"}, status_code=503)
         return JSONResponse({"status": "ready"})
 
-    async def responses(request: Request) -> Response:
+    async def _guarded_payload(
+        request: Request, *, upstream_name: str
+    ) -> tuple[dict | None, dict | None, Response | None]:
+        """Shared client-token, size, JSON, and model-routing checks."""
         supplied = request.headers.get("authorization", "")
         expected = f"Bearer {settings.client_token}"
         if not hmac.compare_digest(supplied, expected):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
+            return None, None, JSONResponse({"error": "unauthorized"}, status_code=401)
         if request.headers.get("content-length"):
             try:
                 if int(request.headers["content-length"]) > settings.max_request_bytes:
-                    return JSONResponse({"error": "request too large"}, status_code=413)
+                    return None, None, JSONResponse({"error": "request too large"}, status_code=413)
             except ValueError:
-                return JSONResponse({"error": "invalid content-length"}, status_code=400)
+                return None, None, JSONResponse({"error": "invalid content-length"}, status_code=400)
         body = await request.body()
         if len(body) > settings.max_request_bytes:
-            return JSONResponse({"error": "request too large"}, status_code=413)
+            return None, None, JSONResponse({"error": "request too large"}, status_code=413)
         try:
             payload = json.loads(body)
         except json.JSONDecodeError:
-            return JSONResponse({"error": "invalid JSON"}, status_code=400)
-        if not isinstance(payload, dict) or payload.get("model") != settings.allowed_model:
-            return JSONResponse({"error": "model not allowed"}, status_code=403)
+            return None, None, JSONResponse({"error": "invalid JSON"}, status_code=400)
+        entry = settings.models().get(payload.get("model")) if isinstance(payload, dict) else None
+        if entry is None or entry.get("upstream") != upstream_name:
+            return None, None, JSONResponse({"error": "model not allowed"}, status_code=403)
+        return payload, entry, None
+
+    async def responses(request: Request) -> Response:
+        payload, _entry, error = await _guarded_payload(request, upstream_name="codex")
+        if error is not None:
+            return error
+        body = json.dumps(payload).encode()
         if not await rate.allow():
             return JSONResponse({"error": "rate limit exceeded"}, status_code=429)
 
@@ -288,6 +319,56 @@ def create_app(
             if not handed_off:
                 concurrency.release()
 
+    async def chat_completions(request: Request) -> Response:
+        payload, entry, error = await _guarded_payload(request, upstream_name="openrouter")
+        if error is not None:
+            return error
+        if not await openrouter_rate.allow():
+            return JSONResponse(
+                {"error": "rate limited"}, status_code=429, headers={"Retry-After": "20"}
+            )
+        payload["model"] = entry.get("upstream_model") or payload["model"]
+        headers = {
+            "Authorization": f"Bearer {settings.openrouter_key}",
+            "Accept": "text/event-stream, application/json",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/cl0udarch1t3cts/spider-runtime",
+            "X-Title": "Spider Doctor",
+        }
+        await openrouter_concurrency.acquire()
+        handed_off = False
+        try:
+            upstream_request = request.app.state.upstream.build_request(
+                "POST",
+                f"{settings.openrouter_base_url.rstrip('/')}/chat/completions",
+                headers=headers,
+                content=json.dumps(payload).encode(),
+            )
+            response = await request.app.state.upstream.send(upstream_request, stream=True)
+            passthrough = {}
+            for name in ("content-type", "x-request-id"):
+                if name in response.headers:
+                    passthrough[name] = response.headers[name]
+
+            async def stream_body():
+                try:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+                finally:
+                    try:
+                        await response.aclose()
+                    finally:
+                        openrouter_concurrency.release()
+
+            result = StreamingResponse(
+                stream_body(), status_code=response.status_code, headers=passthrough
+            )
+            handed_off = True
+            return result
+        finally:
+            if not handed_off:
+                openrouter_concurrency.release()
+
     async def usage(request: Request) -> Response:
         supplied = request.headers.get("authorization", "")
         expected = f"Bearer {settings.client_token}"
@@ -333,6 +414,7 @@ def create_app(
             Route("/health/ready", ready, methods=["GET"]),
             Route("/usage", usage, methods=["GET"]),
             Route("/v1/responses", responses, methods=["POST"]),
+            Route("/v1/chat/completions", chat_completions, methods=["POST"]),
         ],
         lifespan=lifespan,
     )
@@ -346,11 +428,24 @@ def main() -> None:
     token_file = Path(os.environ["SPIDER_BROKER_CLIENT_TOKEN_FILE"])
     if not token_file.is_file() or token_file.stat().st_size == 0:
         raise SystemExit("broker client token file is missing or empty")
+    model_registry = None
+    models_file = os.environ.get("SPIDER_BROKER_MODELS_FILE", "")
+    if models_file and Path(models_file).is_file():
+        model_registry = json.loads(Path(models_file).read_text())
+    openrouter_key = None
+    key_file = os.environ.get("SPIDER_BROKER_OPENROUTER_KEY_FILE", "")
+    if key_file and Path(key_file).is_file():
+        openrouter_key = Path(key_file).read_text().strip() or None
     settings = BrokerSettings(
         client_token=token_file.read_text().strip(),
         allowed_model=os.environ.get("SPIDER_BROKER_ALLOWED_MODEL", "gpt-5.4"),
         max_concurrent_requests=int(os.environ.get("SPIDER_BROKER_MAX_CONCURRENT", "2")),
         requests_per_minute=int(os.environ.get("SPIDER_BROKER_REQUESTS_PER_MINUTE", "20")),
+        model_registry=model_registry,
+        openrouter_key=openrouter_key,
+        openrouter_requests_per_minute=int(
+            os.environ.get("SPIDER_BROKER_OPENROUTER_REQUESTS_PER_MINUTE", "15")
+        ),
     )
     auth_module = importlib.import_module("hermes_cli.auth")
     resolve_codex_runtime_credentials = auth_module.resolve_codex_runtime_credentials

@@ -7,12 +7,23 @@ from starlette.testclient import TestClient
 from spider_doctor.codex_broker import BrokerSettings, create_app
 
 
-def broker_client(handler, resolver=None, *, max_concurrent_requests=2) -> TestClient:
+def broker_client(
+    handler,
+    resolver=None,
+    *,
+    max_concurrent_requests=2,
+    model_registry=None,
+    openrouter_key=None,
+    openrouter_requests_per_minute=15,
+) -> TestClient:
     settings = BrokerSettings(
         client_token="scoped-client-token",
         allowed_model="gpt-5.4",
         max_concurrent_requests=max_concurrent_requests,
         requests_per_minute=20,
+        model_registry=model_registry,
+        openrouter_key=openrouter_key,
+        openrouter_requests_per_minute=openrouter_requests_per_minute,
     )
     transport = httpx.MockTransport(handler)
     app = create_app(
@@ -279,3 +290,136 @@ def test_broker_releases_concurrency_slot_when_stream_raises() -> None:
 
     assert recovered.status_code == 200
     assert recovered.json() == {"id": "recovered"}
+
+
+REGISTRY = {
+    "gpt-5.4": {"upstream": "codex"},
+    "qwen3-coder:free": {
+        "upstream": "openrouter",
+        "upstream_model": "qwen/qwen3-coder:free",
+    },
+}
+
+
+def test_registry_routes_chat_completions_to_openrouter_with_key() -> None:
+    captured = {}
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers["authorization"]
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=httpx.ByteStream(b"data: [DONE]\n\n"),
+        )
+
+    def resolver(force_refresh=False):
+        raise AssertionError("codex credentials must not be touched for openrouter")
+
+    with broker_client(
+        upstream, resolver, model_registry=REGISTRY, openrouter_key="or-secret"
+    ) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"authorization": "Bearer scoped-client-token"},
+            json={"model": "qwen3-coder:free", "messages": [], "stream": True},
+        )
+
+    assert response.status_code == 200
+    assert response.text == "data: [DONE]\n\n"
+    assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert captured["authorization"] == "Bearer or-secret"
+    # The public model name is rewritten to the upstream's identifier.
+    assert captured["body"]["model"] == "qwen/qwen3-coder:free"
+
+
+def test_chat_completions_rejects_codex_routed_and_unknown_models() -> None:
+    def must_not_run(_request):
+        raise AssertionError("upstream must not be called")
+
+    with broker_client(
+        must_not_run, model_registry=REGISTRY, openrouter_key="or-secret"
+    ) as client:
+        headers = {"authorization": "Bearer scoped-client-token"}
+        codex_model = client.post(
+            "/v1/chat/completions", headers=headers, json={"model": "gpt-5.4"}
+        )
+        unknown = client.post(
+            "/v1/chat/completions", headers=headers, json={"model": "nope"}
+        )
+        wrong_token = client.post(
+            "/v1/chat/completions",
+            headers={"authorization": "Bearer wrong"},
+            json={"model": "qwen3-coder:free"},
+        )
+
+    assert codex_model.status_code == 403
+    assert unknown.status_code == 403
+    assert wrong_token.status_code == 401
+
+
+def test_responses_route_rejects_openrouter_routed_model() -> None:
+    def must_not_run(_request):
+        raise AssertionError("upstream must not be called")
+
+    with broker_client(
+        must_not_run, model_registry=REGISTRY, openrouter_key="or-secret"
+    ) as client:
+        response = client.post(
+            "/v1/responses",
+            headers={"authorization": "Bearer scoped-client-token"},
+            json={"model": "qwen3-coder:free", "input": "hello"},
+        )
+
+    assert response.status_code == 403
+
+
+def test_registry_keeps_codex_route_working_unchanged() -> None:
+    def upstream(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://chatgpt.com/backend-api/codex/responses"
+        return httpx.Response(200, stream=httpx.ByteStream(b'{"id":"ok"}'))
+
+    with broker_client(
+        upstream, model_registry=REGISTRY, openrouter_key="or-secret"
+    ) as client:
+        response = client.post(
+            "/v1/responses",
+            headers={"authorization": "Bearer scoped-client-token"},
+            json={"model": "gpt-5.4", "input": "hello"},
+        )
+
+    assert response.status_code == 200
+
+
+def test_openrouter_rate_limit_returns_429_with_retry_after() -> None:
+    def upstream(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=httpx.ByteStream(b"{}"))
+
+    with broker_client(
+        upstream,
+        model_registry=REGISTRY,
+        openrouter_key="or-secret",
+        openrouter_requests_per_minute=1,
+    ) as client:
+        headers = {"authorization": "Bearer scoped-client-token"}
+        first = client.post(
+            "/v1/chat/completions", headers=headers, json={"model": "qwen3-coder:free"}
+        )
+        second = client.post(
+            "/v1/chat/completions", headers=headers, json={"model": "qwen3-coder:free"}
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert "retry-after" in second.headers
+
+
+def test_settings_reject_openrouter_registry_entries_without_key() -> None:
+    with pytest.raises(ValueError, match="openrouter"):
+        BrokerSettings(
+            client_token="token",
+            allowed_model="gpt-5.4",
+            model_registry=REGISTRY,
+            openrouter_key=None,
+        )
