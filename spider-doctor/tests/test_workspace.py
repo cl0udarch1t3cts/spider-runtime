@@ -245,7 +245,7 @@ def test_concurrent_candidates_merge_shared_tracking_files(tmp_path: Path) -> No
         progress.write_text(progress.read_text() + f"- {entry_id} done\n")
         registry = workspace / "registry.json"
         registry.write_text(
-            '{\n  "schema_version": 1,\n  "entries": [{"entry_id": "%s"}]\n}\n' % entry_id
+            f'{{\n  "schema_version": 1,\n  "entries": [{{"entry_id": "{entry_id}"}}]\n}}\n'
         )
         changed = manager.validate_changes(workspace, entry_id)
         return workspace, publisher.create_candidate(workspace, changed, f"create {entry_id}")
