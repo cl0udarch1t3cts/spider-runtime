@@ -109,7 +109,12 @@ class GitWorkspace:
         # config only — nothing is committed to the repository.
         (workspace / ".git" / "info").mkdir(parents=True, exist_ok=True)
         (workspace / ".git" / "info" / "attributes").write_text(
-            "PROGRESS.md merge=union\nregistry.json merge=registryentries\n"
+            "PROGRESS.md merge=union\n"
+            "registry.json merge=registryentries\n"
+            # Every create task appends its own section to the shared verify
+            # files; a line-union keeps both sides' independent additions.
+            "tests/verify.py merge=union\n"
+            "tests/test_verify.py merge=union\n"
         )
         self._run(workspace, "config", "merge.registryentries.name", "registry entry union")
         self._run(

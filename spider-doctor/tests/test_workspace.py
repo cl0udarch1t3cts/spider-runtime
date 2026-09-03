@@ -229,6 +229,9 @@ def test_concurrent_candidates_merge_shared_tracking_files(tmp_path: Path) -> No
     (seed / "AGENTS.md").write_text("rules\n")
     (seed / "PROGRESS.md").write_text("# Progress\n- base note\n")
     (seed / "registry.json").write_text('{\n  "schema_version": 1,\n  "entries": []\n}\n')
+    (seed / "tests").mkdir()
+    (seed / "tests" / "verify.py").write_text("# verify sections\n")
+    (seed / "tests" / "test_verify.py").write_text("# test list\n")
     git(seed, "add", ".")
     git(seed, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "base")
     git(seed, "push", "-q", "origin", "HEAD:main")
@@ -247,6 +250,10 @@ def test_concurrent_candidates_merge_shared_tracking_files(tmp_path: Path) -> No
         registry.write_text(
             f'{{\n  "schema_version": 1,\n  "entries": [{{"entry_id": "{entry_id}"}}]\n}}\n'
         )
+        verify = workspace / "tests" / "verify.py"
+        verify.write_text(verify.read_text() + f"def verify_{entry_id}():\n    pass\n")
+        test_list = workspace / "tests" / "test_verify.py"
+        test_list.write_text(test_list.read_text() + f"# {entry_id}\n")
         changed = manager.validate_changes(workspace, entry_id)
         return workspace, publisher.create_candidate(workspace, changed, f"create {entry_id}")
 
@@ -262,3 +269,7 @@ def test_concurrent_candidates_merge_shared_tracking_files(tmp_path: Path) -> No
 
     registry = json.loads(git(remote, "show", "main:registry.json"))
     assert {e["entry_id"] for e in registry["entries"]} == {"EntryA", "EntryB"}
+    verify = git(remote, "show", "main:tests/verify.py")
+    assert "def verify_EntryA" in verify and "def verify_EntryB" in verify
+    test_list = git(remote, "show", "main:tests/test_verify.py")
+    assert "# EntryA" in test_list and "# EntryB" in test_list
