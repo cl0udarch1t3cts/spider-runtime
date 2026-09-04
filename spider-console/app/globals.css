@@ -563,6 +563,77 @@ a.action {
   background: var(--border);
 }
 
+.donut-row {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.donut {
+  position: relative;
+  flex-shrink: 0;
+  width: 120px;
+  height: 120px;
+}
+
+.donut svg { display: block; }
+
+.donut .slice {
+  stroke: currentColor;
+  transition: opacity 120ms;
+}
+
+.donut:hover .slice:not(:hover) { opacity: 0.55; }
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.donut-total {
+  font-family: var(--font-brand), sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.donut-caption {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.counts.legend {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 0.3rem 1.4rem;
+  min-width: 0;
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* exhausted and failed are both "red" as badges; in the donut and its legend
+   swatches they must stay distinguishable side by side. */
+.donut .st-exhausted,
+.swatch.st-exhausted { color: #a34a3c; }
+.donut .st-no_website,
+.swatch.st-no_website { color: var(--muted); }
+.donut .st-human_review_required,
+.swatch.st-human_review_required { color: var(--brand); }
+
 .status-bar .seg { min-width: 2px; }
 .status-bar .seg.st-succeeded { background: var(--green); }
 .status-bar .seg.st-running { background: var(--blue); }
@@ -633,14 +704,21 @@ h2.panel-head .spacer {
 .meters {
   display: flex;
   align-items: flex-end;
-  gap: 1.4rem;
+  gap: 0.6rem;
 }
 
 .meter {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.25rem;
+}
+
+.meter-caption {
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+  margin-bottom: 0.15rem;
 }
 
 .meter-track {
@@ -690,4 +768,5 @@ h2.panel-head .spacer {
 .meter-side {
   align-self: center;
   min-width: 0;
+  margin-left: 0.8rem;
 }

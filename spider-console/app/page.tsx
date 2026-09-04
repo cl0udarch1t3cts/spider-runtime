@@ -7,6 +7,71 @@ import { Ago } from "@/components/ago";
 import { StatusBadge } from "@/components/status-badge";
 import { duration, isLive, sha, sortedStatusCounts, runDuration, taskDuration } from "@/lib/types";
 
+/** Part-to-whole of Doctor tasks by status: a donut with the total in the
+ *  middle. Slice colors reuse the status colors; the legend beside it (with
+ *  swatches, labels, and counts) and per-slice tooltips carry identity for
+ *  readers who cannot rely on hue alone. */
+function StatusDonut({ counts }: { counts: Record<string, number> }) {
+  const slices = sortedStatusCounts(counts).filter(([, count]) => count > 0);
+  const total = slices.reduce((sum, [, count]) => sum + count, 0);
+  const size = 120;
+  const radius = 46;
+  const stroke = 16;
+  const circumference = 2 * Math.PI * radius;
+  const gap = slices.length > 1 ? 2 : 0;
+  let offset = 0;
+  return (
+    <div className="donut" title="Share of Doctor tasks by status">
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        role="img"
+        aria-label={`${total} Doctor tasks by status`}
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="var(--border)"
+          strokeWidth={stroke}
+        />
+        {total > 0
+          ? slices.map(([status, count]) => {
+              const length = (count / total) * circumference;
+              const visible = Math.max(0, length - gap);
+              const start = offset;
+              offset += length;
+              return (
+                <circle
+                  key={status}
+                  className={`slice st-${status}`}
+                  cx={size / 2}
+                  cy={size / 2}
+                  r={radius}
+                  fill="none"
+                  strokeWidth={stroke}
+                  strokeDasharray={`${visible} ${circumference - visible}`}
+                  strokeDashoffset={-start}
+                  transform={`rotate(-90 ${size / 2} ${size / 2})`}
+                >
+                  <title>
+                    {`${status.replace(/_/g, " ")}: ${count} (${((count / total) * 100).toFixed(1)}%)`}
+                  </title>
+                </circle>
+              );
+            })
+          : null}
+      </svg>
+      <div className="donut-center">
+        <div className="donut-total">{total}</div>
+        <div className="donut-caption">tasks</div>
+      </div>
+    </div>
+  );
+}
+
 function BudgetEditor({
   dailyPercent,
   reservePercent,
@@ -317,6 +382,12 @@ export default function OverviewPage() {
                 className="meter"
                 title={`OpenAI subscription: ${budget.usedPercent.toFixed(1)}% of the weekly window used, ${budget.allowedPercent.toFixed(0)}% allowed today (day ${budget.day ?? "?"}/${budget.totalDays ?? "?"}, resets in ${duration(budget.resetsInSeconds)})`}
               >
+                <div className="meter-value">
+                  {budget.usedPercent.toFixed(1)}%
+                </div>
+                <div className="meter-caption">
+                  {budget.allowedPercent.toFixed(0)}% allowed
+                </div>
                 <div className="meter-track">
                   <div
                     className={`meter-fill ${
@@ -333,12 +404,7 @@ export default function OverviewPage() {
                     style={{ bottom: `${Math.min(100, budget.allowedPercent)}%` }}
                   />
                 </div>
-                <div className="meter-value">
-                  {budget.usedPercent.toFixed(1)}%
-                </div>
-                <div className="meter-label">
-                  openai · {budget.allowedPercent.toFixed(0)}% allowed
-                </div>
+                <div className="meter-label">openai</div>
               </div>
             ) : null}
             {openrouter ? (
@@ -346,6 +412,12 @@ export default function OverviewPage() {
                 className="meter"
                 title={`OpenRouter credits: $${openrouter.total_usage.toFixed(2)} used of $${openrouter.total_credits.toFixed(2)} purchased`}
               >
+                <div className="meter-value">
+                  ${openrouter.total_usage.toFixed(2)}
+                </div>
+                <div className="meter-caption">
+                  of ${openrouter.total_credits.toFixed(0)} credits
+                </div>
                 <div className="meter-track">
                   <div
                     className={`meter-fill ${
@@ -360,12 +432,7 @@ export default function OverviewPage() {
                     }}
                   />
                 </div>
-                <div className="meter-value">
-                  ${openrouter.total_usage.toFixed(2)}
-                </div>
-                <div className="meter-label">
-                  openrouter · ${openrouter.total_credits.toFixed(0)} credits
-                </div>
+                <div className="meter-label">openrouter</div>
               </div>
             ) : null}
             {budget ? (
@@ -408,36 +475,27 @@ export default function OverviewPage() {
           <p className="error">{executor.error}</p>
         ) : stats ? (
           <>
-            <div
-              className="status-bar"
-              title="Share of Doctor tasks by status"
-            >
-              {sortedStatusCounts(stats.doctor_tasks).map(([status, count]) => (
-                <div
-                  key={status}
-                  className={`seg st-${status}`}
-                  style={{ flexGrow: count }}
-                  title={`${status.replace(/_/g, " ")}: ${count}`}
-                />
-              ))}
-            </div>
-            <div className="counts">
-              <div className="count">
-                <div className={`value ${live.length ? "st-running" : ""}`}>
-                  {live.length}
+            <div className="donut-row">
+              <StatusDonut counts={stats.doctor_tasks} />
+              <div className="counts legend">
+                <div className="count">
+                  <div className={`value ${live.length ? "st-running" : ""}`}>
+                    {live.length}
+                  </div>
+                  <div className="label">working now</div>
                 </div>
-                <div className="label">working now</div>
+                {sortedStatusCounts(stats.doctor_tasks).map(([status, count]) => (
+                  <Link
+                    className="count"
+                    key={status}
+                    href={`/tasks?status=${encodeURIComponent(status)}`}
+                  >
+                    <span className={`swatch st-${status}`} aria-hidden="true" />
+                    <div className={`value st-${status}`}>{count}</div>
+                    <div className="label">{status.replace(/_/g, " ")}</div>
+                  </Link>
+                ))}
               </div>
-              {sortedStatusCounts(stats.doctor_tasks).map(([status, count]) => (
-                <Link
-                  className="count"
-                  key={status}
-                  href={`/tasks?status=${encodeURIComponent(status)}`}
-                >
-                  <div className={`value st-${status}`}>{count}</div>
-                  <div className="label">{status.replace(/_/g, " ")}</div>
-                </Link>
-              ))}
             </div>
           </>
         ) : null}
