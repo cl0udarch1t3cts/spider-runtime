@@ -14,9 +14,9 @@ import { duration, isLive, sha, sortedStatusCounts, runDuration, taskDuration } 
 function StatusDonut({ counts }: { counts: Record<string, number> }) {
   const slices = sortedStatusCounts(counts).filter(([, count]) => count > 0);
   const total = slices.reduce((sum, [, count]) => sum + count, 0);
-  const size = 120;
-  const radius = 46;
-  const stroke = 16;
+  const size = 168;
+  const radius = 66;
+  const stroke = 22;
   const circumference = 2 * Math.PI * radius;
   const gap = slices.length > 1 ? 2 : 0;
   let offset = 0;
@@ -477,24 +477,28 @@ export default function OverviewPage() {
           <>
             <div className="donut-row">
               <StatusDonut counts={stats.doctor_tasks} />
-              <div className="counts legend">
-                <div className="count">
-                  <div className={`value ${live.length ? "st-running" : ""}`}>
-                    {live.length}
-                  </div>
-                  <div className="label">working now</div>
-                </div>
+              <div className="legend">
                 {sortedStatusCounts(stats.doctor_tasks).map(([status, count]) => (
                   <Link
-                    className="count"
+                    className="legend-row"
                     key={status}
                     href={`/tasks?status=${encodeURIComponent(status)}`}
                   >
                     <span className={`swatch st-${status}`} aria-hidden="true" />
-                    <div className={`value st-${status}`}>{count}</div>
-                    <div className="label">{status.replace(/_/g, " ")}</div>
+                    <span className="label">{status.replace(/_/g, " ")}</span>
+                    <span className={`value st-${status}`}>{count}</span>
                   </Link>
                 ))}
+                <div className="legend-row live-row">
+                  <span
+                    className={`swatch ${live.length ? "st-running" : "idle"}`}
+                    aria-hidden="true"
+                  />
+                  <span className="label">working now</span>
+                  <span className={`value ${live.length ? "st-running" : "idle"}`}>
+                    {live.length}
+                  </span>
+                </div>
               </div>
             </div>
           </>
