@@ -423,3 +423,49 @@ def test_settings_reject_openrouter_registry_entries_without_key() -> None:
             model_registry=REGISTRY,
             openrouter_key=None,
         )
+
+
+def test_usage_includes_openrouter_credits_when_key_configured() -> None:
+    def upstream(request: httpx.Request) -> httpx.Response:
+        if "openrouter.ai" in str(request.url):
+            assert str(request.url) == "https://openrouter.ai/api/v1/credits"
+            assert request.headers["authorization"] == "Bearer or-secret"
+            return httpx.Response(
+                200, json={"data": {"total_credits": 84.0, "total_usage": 1.25}}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "rate_limits": {
+                    "primary": {"usedPercent": 12.5, "windowDurationMins": 10080, "resetsInSeconds": 900}
+                }
+            },
+        )
+
+    with broker_client(
+        upstream, model_registry=REGISTRY, openrouter_key="or-secret"
+    ) as client:
+        response = client.get("/usage", headers={"authorization": "Bearer scoped-client-token"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["windows"][0]["used_percent"] == 12.5
+    assert body["openrouter"] == {"total_credits": 84.0, "total_usage": 1.25}
+
+
+def test_usage_omits_openrouter_when_probe_fails() -> None:
+    def upstream(request: httpx.Request) -> httpx.Response:
+        if "openrouter.ai" in str(request.url):
+            return httpx.Response(500)
+        return httpx.Response(
+            200,
+            json={"rate_limits": {"primary": {"usedPercent": 5.0, "windowDurationMins": 10080, "resetsInSeconds": 900}}},
+        )
+
+    with broker_client(
+        upstream, model_registry=REGISTRY, openrouter_key="or-secret"
+    ) as client:
+        response = client.get("/usage", headers={"authorization": "Bearer scoped-client-token"})
+
+    assert response.status_code == 200
+    assert "openrouter" not in response.json()

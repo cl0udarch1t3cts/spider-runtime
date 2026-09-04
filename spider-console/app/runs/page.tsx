@@ -191,6 +191,7 @@ function RunsView() {
                 <th>entry</th>
                 <th>status</th>
                 <th>failure</th>
+                <th title="Model/provider that built the scraper used by this run">built by</th>
                 <th>release</th>
                 <th title="Consecutive failed runs since the entry's last success">tries</th>
                 <th>started</th>
@@ -222,6 +223,7 @@ function RunsView() {
                     <StatusBadge value={run.status} />
                   </td>
                   <td>{run.failure_class ?? "—"}</td>
+                  <td className="muted" title={run.scraper_provider ?? ""}>{run.scraper_model ?? "—"}</td>
                   <td>{sha(run.scraper_release)}</td>
                   <td>{run.failed_attempts ?? "—"}</td>
                   <td><Ago iso={run.started_at} /></td>

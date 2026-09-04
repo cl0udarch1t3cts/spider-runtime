@@ -347,6 +347,12 @@ class MongoControlService:
                 "updated_at": datetime.now(UTC),
                 **entry_contract,
             }
+            # Which model/provider built this scraper (ADR-008 audit); runs
+            # copy it so every record is attributable to its builder.
+            if isinstance(task.get("model"), str):
+                entry_updates["scraper_model"] = task["model"]
+            if isinstance(task.get("provider"), str):
+                entry_updates["scraper_provider"] = task["provider"]
             if self.db.entries.update_one(
                 {"_id": entry_id},
                 {"$set": entry_updates},
@@ -753,6 +759,8 @@ class MongoControlService:
                 "job_id": document.get("job_id"),
                 "entry_id": document.get("entry_id"),
                 "scraper_release": document.get("scraper_release"),
+                "scraper_model": document.get("scraper_model"),
+                "scraper_provider": document.get("scraper_provider"),
                 "status": document.get("status"),
                 "failure_class": document.get("failure_class"),
                 "record_id": document.get("record_id"),

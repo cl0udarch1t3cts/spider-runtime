@@ -216,13 +216,14 @@ class MongoDoctorTaskRepository:
         task_id: str,
         lease_token: str,
         model: str,
+        provider: str,
         *,
         now: datetime | None = None,
     ) -> bool:
-        """Stamp the model chosen for the current attempt (ADR-008 audit)."""
+        """Stamp the model and provider chosen for the current attempt (ADR-008)."""
         outcome = self.collection.update_one(
             {"_id": task_id, "lease.token": lease_token},
-            {"$set": {"model": model, "updated_at": now or datetime.now(UTC)}},
+            {"$set": {"model": model, "provider": provider, "updated_at": now or datetime.now(UTC)}},
         )
         return outcome.modified_count == 1
 

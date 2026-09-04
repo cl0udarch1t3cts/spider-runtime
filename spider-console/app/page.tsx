@@ -168,6 +168,7 @@ export default function OverviewPage() {
   const tasks = executor.tasks ?? [];
   const runs = executor.runs ?? [];
   const budget = usage && !usage.error ? usage.budget : null;
+  const openrouter = usage && !usage.error ? (usage.openrouter ?? null) : null;
   const live = tasks.filter(isLive);
   // A failed task is only a problem while it is the entry's latest word:
   // an exhausted create superseded by a later successful one is history.
@@ -255,6 +256,7 @@ export default function OverviewPage() {
                 <th>entry</th>
                 <th>status</th>
                 <th>failure</th>
+                <th title="Model/provider that built the scraper used by this run">built by</th>
                 <th>release</th>
                 <th>started</th>
                 <th title="Wall-clock time from run start to finish">duration</th>
@@ -285,6 +287,7 @@ export default function OverviewPage() {
                     <StatusBadge value={run.status} />
                   </td>
                   <td>{run.failure_class ?? "—"}</td>
+                  <td className="muted" title={run.scraper_provider ?? ""}>{run.scraper_model ?? "—"}</td>
                   <td>{sha(run.scraper_release)}</td>
                   <td><Ago iso={run.started_at} /></td>
                   <td>{runDuration(run.started_at, run.finished_at)}</td>
@@ -306,46 +309,87 @@ export default function OverviewPage() {
 
       <div className="panel-row">
       <section className="panel">
-        <h2>Subscription budget</h2>
-        {budget ? (
-          <>
-            <div className="bar">
+        <h2>Provider budgets</h2>
+        {budget || openrouter ? (
+          <div className="meters">
+            {budget ? (
               <div
-                className={`fill ${
-                  budget.usedPercent >= budget.allowedPercent
-                    ? "over"
-                    : budget.usedPercent >= budget.allowedPercent - 10
-                      ? "warn"
-                      : ""
-                }`}
-                style={{ width: `${Math.min(100, budget.usedPercent)}%` }}
-              />
-              <div
-                className="limit"
-                style={{ left: `${Math.min(100, budget.allowedPercent)}%` }}
-              />
-              <div className="text">
-                {budget.usedPercent.toFixed(1)}% used /{" "}
-                {budget.allowedPercent.toFixed(0)}% allowed
+                className="meter"
+                title={`OpenAI subscription: ${budget.usedPercent.toFixed(1)}% of the weekly window used, ${budget.allowedPercent.toFixed(0)}% allowed today (day ${budget.day ?? "?"}/${budget.totalDays ?? "?"}, resets in ${duration(budget.resetsInSeconds)})`}
+              >
+                <div className="meter-track">
+                  <div
+                    className={`meter-fill ${
+                      budget.usedPercent >= budget.allowedPercent
+                        ? "over"
+                        : budget.usedPercent >= budget.allowedPercent - 10
+                          ? "warn"
+                          : ""
+                    }`}
+                    style={{ height: `${Math.min(100, budget.usedPercent)}%` }}
+                  />
+                  <div
+                    className="meter-limit"
+                    style={{ bottom: `${Math.min(100, budget.allowedPercent)}%` }}
+                  />
+                </div>
+                <div className="meter-value">
+                  {budget.usedPercent.toFixed(1)}%
+                </div>
+                <div className="meter-label">
+                  openai · {budget.allowedPercent.toFixed(0)}% allowed
+                </div>
               </div>
-            </div>
-            <p className="muted">
-              decision:{" "}
-              <StatusBadge
-                value={budget.decision === "proceed" ? "succeeded" : "failed"}
-              />{" "}
-              {budget.decision}
-              {budget.day !== null
-                ? ` · day ${budget.day}/${budget.totalDays}`
-                : ""}{" "}
-              · resets in {duration(budget.resetsInSeconds)} · daily{" "}
-              {budget.dailyPercent}% · reserve {budget.reservePercent}%{" "}
-              <BudgetEditor
-                dailyPercent={budget.dailyPercent}
-                reservePercent={budget.reservePercent}
-              />
-            </p>
-          </>
+            ) : null}
+            {openrouter ? (
+              <div
+                className="meter"
+                title={`OpenRouter credits: $${openrouter.total_usage.toFixed(2)} used of $${openrouter.total_credits.toFixed(2)} purchased`}
+              >
+                <div className="meter-track">
+                  <div
+                    className={`meter-fill ${
+                      openrouter.total_usage >= openrouter.total_credits
+                        ? "over"
+                        : openrouter.total_usage >= openrouter.total_credits * 0.9
+                          ? "warn"
+                          : ""
+                    }`}
+                    style={{
+                      height: `${Math.min(100, (openrouter.total_usage / Math.max(openrouter.total_credits, 0.01)) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <div className="meter-value">
+                  ${openrouter.total_usage.toFixed(2)}
+                </div>
+                <div className="meter-label">
+                  openrouter · ${openrouter.total_credits.toFixed(0)} credits
+                </div>
+              </div>
+            ) : null}
+            {budget ? (
+              <div className="meter-side">
+                <p className="muted">
+                  decision:{" "}
+                  <StatusBadge
+                    value={budget.decision === "proceed" ? "succeeded" : "failed"}
+                  />{" "}
+                  {budget.decision}
+                  {budget.day !== null
+                    ? ` · day ${budget.day}/${budget.totalDays}`
+                    : ""}
+                  <br />
+                  resets in {duration(budget.resetsInSeconds)} · daily{" "}
+                  {budget.dailyPercent}% · reserve {budget.reservePercent}%{" "}
+                  <BudgetEditor
+                    dailyPercent={budget.dailyPercent}
+                    reservePercent={budget.reservePercent}
+                  />
+                </p>
+              </div>
+            ) : null}
+          </div>
         ) : (
           <p className="error">
             usage unavailable{usage?.error ? ` — ${usage.error}` : ""}

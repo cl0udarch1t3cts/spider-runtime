@@ -62,6 +62,9 @@ class ExecutorWorker:
         )
         self.service.save_run(run)
         entry = self.service.get_entry(job.entry_id)
+        if entry is not None:
+            run.scraper_model = entry.scraper_model
+            run.scraper_provider = entry.scraper_provider
         if entry is None:
             errors = [f"entry {job.entry_id!r} is not registered"]
             return self._fail(job.id, job.lease.token, run, FailureClass.OUTPUT_SCHEMA_FAILURE, errors)

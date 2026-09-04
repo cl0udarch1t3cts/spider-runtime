@@ -629,3 +629,65 @@ h2.panel-head {
 h2.panel-head .spacer {
   flex: 1;
 }
+
+.meters {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.4rem;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.meter-track {
+  position: relative;
+  width: 44px;
+  height: 110px;
+  background: #0a0e14;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  position: absolute;
+  bottom: 0;
+  left: 2px;
+  right: 2px;
+  background: var(--brand);
+  border-radius: 4px 4px 0 0;
+}
+
+.meter-fill.warn { background: var(--amber); }
+.meter-fill.over { background: var(--red); }
+
+.meter-limit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--red);
+}
+
+.meter-value {
+  font-family: var(--font-brand), sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.meter-label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.meter-side {
+  align-self: center;
+  min-width: 0;
+}

@@ -455,3 +455,25 @@ def test_worker_still_rejects_unrelated_release_with_lineage_check() -> None:
 
     assert run.status == JobStatus.FAILED
     assert run.failure_class == FailureClass.RELEASE_MISMATCH
+
+
+def test_run_carries_the_scraper_builder_model_and_provider() -> None:
+    service = make_service()
+    service.put_entry(
+        activated_entry(
+            website="https://example.com",
+            scraper_model="qwen3-coder",
+            scraper_provider="openrouter",
+        )
+    )
+    service.enqueue(ExecutionJob(entry_id="example", idempotency_key="one"))
+    worker = ExecutorWorker(service, FakeRunner(successful_result()), worker_id="worker-1")
+
+    run = worker.process_one()
+
+    assert run is not None
+    assert run.scraper_model == "qwen3-coder"
+    assert run.scraper_provider == "openrouter"
+    stored = service.list_runs("example")[0]
+    assert stored.scraper_model == "qwen3-coder"
+    assert stored.scraper_provider == "openrouter"

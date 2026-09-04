@@ -28,8 +28,8 @@ class FakeRepository:
         self.published = (task_id, lease_token, candidate_sha)
         return True
 
-    def record_model(self, task_id, lease_token, model):
-        self.model = (task_id, model)
+    def record_model(self, task_id, lease_token, model, provider):
+        self.model = (task_id, model, provider)
         return True
 
     def fail_attempt(self, task_id, lease_token, error, **kwargs):

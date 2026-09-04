@@ -27,6 +27,8 @@ export interface Run {
   failure_class: string | null;
   record_id: string | null;
   scraper_release: string | null;
+  scraper_model: string | null;
+  scraper_provider: string | null;
   failed_attempts: number | null;
   started_at: string;
   finished_at: string | null;
@@ -71,6 +73,7 @@ export interface Overview {
   usage: {
     error?: string;
     source?: string;
+    openrouter?: { total_credits: number; total_usage: number } | null;
     budget?: {
       usedPercent: number;
       allowedPercent: number;

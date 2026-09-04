@@ -369,6 +369,26 @@ def create_app(
             if not handed_off:
                 openrouter_concurrency.release()
 
+    async def _openrouter_credits(request: Request) -> dict | None:
+        if not (settings.openrouter_key or "").strip():
+            return None
+        try:
+            response = await request.app.state.upstream.get(
+                f"{settings.openrouter_base_url.rstrip('/')}/credits",
+                headers={"Authorization": f"Bearer {settings.openrouter_key}"},
+                timeout=httpx.Timeout(10.0, connect=5.0),
+            )
+            if response.status_code != 200:
+                return None
+            data = response.json().get("data")
+            total = data.get("total_credits") if isinstance(data, dict) else None
+            used = data.get("total_usage") if isinstance(data, dict) else None
+            if isinstance(total, (int, float)) and isinstance(used, (int, float)):
+                return {"total_credits": float(total), "total_usage": float(used)}
+        except Exception as exc:  # noqa: BLE001 - credits are informational only
+            logger.warning("openrouter credits probe failed: %s", exc)
+        return None
+
     async def usage(request: Request) -> Response:
         supplied = request.headers.get("authorization", "")
         expected = f"Bearer {settings.client_token}"
@@ -389,7 +409,11 @@ def create_app(
                 if upstream_response.status_code == 200:
                     windows = _windows_from_usage_payload(upstream_response.json(), time.time())
                     if windows:
-                        return JSONResponse({"source": "api", "windows": windows})
+                        payload = {"source": "api", "windows": windows}
+                        credits = await _openrouter_credits(request)
+                        if credits is not None:
+                            payload["openrouter"] = credits
+                        return JSONResponse(payload)
                     logger.warning("usage probe returned 200 but no parseable windows")
                 else:
                     logger.warning(
@@ -399,13 +423,15 @@ def create_app(
             logger.warning("usage probe failed: %s", exc)
         snapshot = request.app.state.usage_headers
         if snapshot is not None:
-            return JSONResponse(
-                {
-                    "source": "headers",
-                    "age_seconds": int(time.time() - snapshot["captured_at"]),
-                    "windows": snapshot["windows"],
-                }
-            )
+            payload = {
+                "source": "headers",
+                "age_seconds": int(time.time() - snapshot["captured_at"]),
+                "windows": snapshot["windows"],
+            }
+            credits = await _openrouter_credits(request)
+            if credits is not None:
+                payload["openrouter"] = credits
+            return JSONResponse(payload)
         return JSONResponse({"error": "usage unavailable"}, status_code=503)
 
     return Starlette(

@@ -280,9 +280,11 @@ def test_record_model_stamps_the_attempt_model_under_a_valid_lease() -> None:
     collection.insert_one(queued_task("task-1"))
     task = repo.claim("doctor-1")
 
-    assert repo.record_model(task.id, task.lease.token, "qwen3-coder:free") is True
-    assert collection.find_one({"_id": "task-1"})["model"] == "qwen3-coder:free"
+    assert repo.record_model(task.id, task.lease.token, "qwen3-coder:free", "openrouter") is True
+    stamped = collection.find_one({"_id": "task-1"})
+    assert stamped["model"] == "qwen3-coder:free"
+    assert stamped["provider"] == "openrouter"
 
     # A stale lease must not overwrite the stamp.
-    assert repo.record_model(task.id, "wrong-token", "gpt-5.4") is False
+    assert repo.record_model(task.id, "wrong-token", "gpt-5.4", "openai") is False
     assert collection.find_one({"_id": "task-1"})["model"] == "qwen3-coder:free"

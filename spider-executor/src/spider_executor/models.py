@@ -112,6 +112,9 @@ class Entry(BaseModel):
     website: str | None = None
     active: bool = True
     scraper_release: str | None = None
+    # Which model/provider built the activated scraper (ADR-008 audit).
+    scraper_model: str | None = None
+    scraper_provider: str | None = None
     validation: EntryValidation = Field(default_factory=EntryValidation)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -137,6 +140,8 @@ class ExecutionRun(BaseModel):
     job_id: str
     entry_id: EntryId
     scraper_release: str | None = None
+    scraper_model: str | None = None
+    scraper_provider: str | None = None
     status: JobStatus
     failure_class: FailureClass | None = None
     record_id: str | None = None

@@ -303,3 +303,25 @@ def test_next_handoff_discovers_persisted_succeeded_task() -> None:
     assert job is not None
     assert job.entry_id == "business-123"
     assert job.scraper_release == COMMIT_SHA
+
+
+def test_handoff_copies_builder_model_and_provider_to_the_entry() -> None:
+    service = MongoControlService(mongomock.MongoClient().spider, release_provider=lambda: "b" * 40)
+    registration = service.register("business-m", "Model AG", "Bern")
+    service.db.doctor_tasks.update_one(
+        {"_id": registration["task_id"]},
+        {
+            "$set": {
+                "status": "succeeded",
+                "model": "qwen3-coder",
+                "provider": "openrouter",
+                "result": {"commit_sha": COMMIT_SHA},
+            }
+        },
+    )
+
+    assert service.consume_doctor_handoff(registration["task_id"]) is not None
+
+    entry = service.db.entries.find_one({"_id": "business-m"})
+    assert entry["scraper_model"] == "qwen3-coder"
+    assert entry["scraper_provider"] == "openrouter"

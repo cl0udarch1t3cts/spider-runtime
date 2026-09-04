@@ -177,6 +177,7 @@ export async function fetchExecutor() {
 export async function fetchUsage(): Promise<{
   windows: UsageWindow[];
   source: string;
+  openrouter?: { total_credits: number; total_usage: number };
   budget: Budget | null;
 } | null> {
   if (!USAGE_URL) return null;
@@ -195,6 +196,7 @@ export async function fetchUsage(): Promise<{
   const payload = (await response.json()) as {
     source: string;
     windows: UsageWindow[];
+    openrouter?: { total_credits: number; total_usage: number };
   };
   return {
     ...payload,

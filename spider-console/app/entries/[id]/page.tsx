@@ -225,6 +225,7 @@ function EntryDetailView() {
                   <th>run</th>
                   <th>status</th>
                   <th>failure</th>
+                <th title="Model/provider that built the scraper used by this run">built by</th>
                   <th>release</th>
                   <th>record</th>
                   <th>started</th>
@@ -247,6 +248,7 @@ function EntryDetailView() {
                       <StatusBadge value={run.status} />
                     </td>
                     <td>{run.failure_class ?? "—"}</td>
+                    <td className="muted" title={run.scraper_provider ?? ""}>{run.scraper_model ?? "—"}</td>
                     <td>{sha(run.scraper_release)}</td>
                     <td>
                       {run.record_id ? (

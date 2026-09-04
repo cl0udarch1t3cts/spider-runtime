@@ -110,6 +110,8 @@ class RunView(BaseModel):
     job_id: str | None = None
     entry_id: str | None = None
     scraper_release: str | None = None
+    scraper_model: str | None = None
+    scraper_provider: str | None = None
     status: str | None = None
     failure_class: str | None = None
     record_id: str | None = None
