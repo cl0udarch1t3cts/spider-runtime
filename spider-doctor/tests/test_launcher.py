@@ -201,3 +201,127 @@ def test_result_rejects_path_traversal(tmp_path: Path) -> None:
         launcher.parse_result(
             '{"status":"awaiting_review","summary":"fixed","changed_files":["../secret"],"tests":[],"errors":[]}'
         )
+
+
+RESULT_JSON = (
+    '{"status":"awaiting_review","summary":"fixed","changed_files":'
+    '["scrapers/example/scrape.py"],"tests":["tests/verify.py"],"errors":[]}'
+)
+
+
+def test_parse_result_extracts_json_embedded_in_hermes_noise() -> None:
+    content = (
+        "[hermes] WARNING: container entrypoint is not PID 1; falling back\n"
+        "Done. Here is the result:\n```json\n" + RESULT_JSON + "\n```\nsession_id: abc\n"
+    )
+
+    result = DockerHermesLauncher.parse_result(content)
+
+    assert result.summary == "fixed"
+    assert result.changed_files == ["scrapers/example/scrape.py"]
+
+
+def test_parse_result_skips_objects_that_are_not_doctor_results() -> None:
+    content = 'Fetched {"name": "Example", "city": "Bern"} from meta.json.\n' + RESULT_JSON
+
+    result = DockerHermesLauncher.parse_result(content)
+
+    assert result.summary == "fixed"
+
+
+def test_parse_result_error_carries_sanitized_excerpt() -> None:
+    content = "\x1b[33m[hermes] WARNING\x1b[0m nothing useful here\n" + "x" * 5000
+
+    with pytest.raises(ValueError, match="invalid JSON") as excinfo:
+        DockerHermesLauncher.parse_result(content)
+
+    message = str(excinfo.value)
+    assert "\x1b" not in message
+    assert "[hermes] WARNING nothing useful here" in message
+    assert len(message) < 1500
+
+
+def test_parse_result_reports_turn_limit_exhaustion() -> None:
+    content = "I reached the maximum iterations (40) but couldn't summarize."
+
+    with pytest.raises(ValueError, match="turn limit"):
+        DockerHermesLauncher.parse_result(content)
+
+
+def _fake_docker(tmp_path: Path, script: str) -> Path:
+    binary = tmp_path / "fake-docker"
+    binary.write_text("#!/bin/sh\n" + script)
+    binary.chmod(0o700)
+    return binary
+
+
+def _run_dirs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    hermes_home = tmp_path / "hermes"
+    hermes_home.mkdir()
+    workspace = tmp_path / "workspace"
+    (workspace / ".git").mkdir(parents=True)
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    task_file = task_dir / "task.json"
+    task_file.write_text("{}")
+    (task_dir / "result-schema.json").write_text("{}")
+    output_dir = task_dir / "result"
+    output_dir.mkdir()
+    return hermes_home, workspace, task_file, output_dir
+
+
+def test_run_recovers_result_from_noisy_stdout_and_keeps_transcript(tmp_path: Path) -> None:
+    hermes_home, workspace, task_file, output_dir = _run_dirs(tmp_path)
+    docker = _fake_docker(
+        tmp_path,
+        "printf '[hermes] banner\\n%s\\n' '" + RESULT_JSON + "'\n"
+        "echo 'deprecated .env' >&2\n",
+    )
+    config = LauncherConfig(
+        image=DIGEST,
+        hermes_home=hermes_home,
+        docker_binary=str(docker),
+        verify_network_policy=False,
+    )
+
+    result = DockerHermesLauncher(config).run(
+        task(), workspace=workspace, task_file=task_file, output_dir=output_dir
+    )
+
+    assert result.summary == "fixed"
+    assert "[hermes] banner" in (output_dir / "hermes-stdout.log").read_text()
+    assert "deprecated .env" in (output_dir / "hermes-stderr.log").read_text()
+
+
+def test_run_failure_names_missing_result_file_and_keeps_transcript(tmp_path: Path) -> None:
+    hermes_home, workspace, task_file, output_dir = _run_dirs(tmp_path)
+    docker = _fake_docker(tmp_path, "echo '[hermes] I gave up without writing anything'\n")
+    config = LauncherConfig(
+        image=DIGEST,
+        hermes_home=hermes_home,
+        docker_binary=str(docker),
+        verify_network_policy=False,
+    )
+
+    with pytest.raises(ValueError, match="invalid JSON") as excinfo:
+        DockerHermesLauncher(config).run(
+            task(), workspace=workspace, task_file=task_file, output_dir=output_dir
+        )
+
+    assert "/result/result.json was not written" in str(excinfo.value)
+    assert "I gave up" in (output_dir / "hermes-stdout.log").read_text()
+
+
+def test_prompt_orders_result_file_before_final_message(tmp_path: Path) -> None:
+    config = LauncherConfig(image=DIGEST, hermes_home=tmp_path / "hermes")
+    command = DockerHermesLauncher(config).build_command(
+        task(),
+        workspace=tmp_path / "workspace",
+        task_file=tmp_path / "task.json",
+        output_dir=tmp_path / "output",
+    )
+    prompt = command[-1]
+
+    assert "/result/result.json" in prompt
+    assert prompt.index("/result/result.json") < prompt.index("final message")
+    assert "turn" in prompt.lower()

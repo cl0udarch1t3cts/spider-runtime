@@ -532,6 +532,17 @@ db.doctor_tasks.find(
 
 Do not infer the exact error from the generic Doctor log summary. Use `last_error` in the durable task.
 
+`Hermes returned invalid JSON from ...` means the agent finished without a
+parseable Doctor result. The error names the source (`/result/result.json`, or
+`stdout` when the result file was never written), says when the agent ran out
+of turns, and quotes a sanitized excerpt of the output. The full Hermes
+transcript of the last attempt is kept next to the result file as
+`hermes-stdout.log` / `hermes-stderr.log` in the task's directory under the
+Doctor task root (`spider-doctor/data/tasks/<task id>/result/` on the VM). The parser already
+tolerates banners, code fences, and commentary around the JSON; a task that
+still fails this way usually hit the turn limit (`SPIDER_DOCTOR_AGENT_MAX_TURNS`)
+or gave up without writing the file.
+
 ## Manually enqueue an activated scraper
 
 ```bash
