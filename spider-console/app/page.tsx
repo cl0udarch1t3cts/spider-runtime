@@ -469,6 +469,7 @@ export default function OverviewPage() {
                 <tr>
                   <th>entry</th>
                   <th>type</th>
+                  <th title="Model running this attempt">model</th>
                   <th>att</th>
                   <th>worker / lease</th>
                   <th title="How long the current attempt has been running (since claim)">duration</th>
@@ -491,6 +492,7 @@ export default function OverviewPage() {
                       )}
                     </td>
                     <td>{task.type}</td>
+                    <td className="muted">{task.model ?? "—"}</td>
                     <td>
                       {task.attempts}/{task.max_attempts}
                     </td>
@@ -524,6 +526,7 @@ export default function OverviewPage() {
                 <tr>
                   <th>entry</th>
                   <th>status</th>
+                  <th title="Model of the latest attempt">model</th>
                   <th>att</th>
                   <th title="Why this task's most recent attempt failed; retries overwrite it. Each create/repair cycle is its own task row, so an entry can have several">error</th>
                   <th title="Time since the Doctor last touched this task: claimed it, finished an attempt, or changed its status">last activity</th>
@@ -547,6 +550,7 @@ export default function OverviewPage() {
                     <td>
                       <StatusBadge value={task.status} />
                     </td>
+                    <td className="muted">{task.model ?? "—"}</td>
                     <td>
                       {task.attempts}/{task.max_attempts}
                     </td>
